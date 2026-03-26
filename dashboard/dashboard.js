@@ -793,7 +793,7 @@ function buildDashCard(task) {
         <div class="dash-card__avatar" style="background:${AVATAR_COLORS[colorIdx]}">${initials}</div>
         <div class="dash-card__name-block">
           <span class="dash-card__name">${escapeHtml(displayName)}</span>
-          <span class="dash-card__company">${stage ? escapeHtml(stage.label) : ''}</span>
+          <span class="dash-card__company">${task.title ? escapeHtml(task.title) : (stage ? escapeHtml(stage.label) : '')}</span>
         </div>
       </div>
       <span class="dash-card__priority dash-card__priority--${priority}">${priorityLabel}</span>

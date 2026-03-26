@@ -970,6 +970,11 @@ function extractLinkedInProfileUrl() {
 }
 
 // ---- LinkedIn ----
+function cleanLinkedInText(text) {
+  // Remove "Status is offline", "Status is online", etc.
+  return (text || '').replace(/Status is (offline|online|busy|away|dnd)\s*/gi, '').trim();
+}
+
 function extractLinkedInName() {
   const selectors = [
     '.msg-thread__link-to-profile',
@@ -982,7 +987,11 @@ function extractLinkedInName() {
   for (const sel of selectors) {
     try {
       const el = document.querySelector(sel);
-      if (el && el.textContent.trim()) return el.textContent.trim();
+      const raw = el && el.textContent.trim();
+      if (raw) {
+        const cleaned = cleanLinkedInText(raw);
+        if (cleaned) return cleaned;
+      }
     } catch (_) {}
   }
   for (const containerSel of ['.msg-thread', '.scaffold-layout__main']) {
@@ -990,10 +999,40 @@ function extractLinkedInName() {
     if (!container) continue;
     for (const tag of ['h1', 'h2', 'h3']) {
       const el = container.querySelector(tag);
-      if (el && el.textContent.trim().length > 1) return el.textContent.trim();
+      const raw = el && el.textContent.trim();
+      if (raw && raw.length > 1) {
+        const cleaned = cleanLinkedInText(raw);
+        if (cleaned) return cleaned;
+      }
     }
   }
   return 'Unknown Contact';
+}
+
+function extractLinkedInTitle() {
+  // Extract headline/title text from LinkedIn messaging header
+  const selectors = [
+    '.msg-entity-lockup__entity-title + .msg-entity-lockup__entity-subtitle',
+    '.msg-entity-lockup__entity-subtitle',
+    '.msg-overlay-conversation-bubble__subtitle',
+    '.msg-thread .msg-entity-lockup__entity-subtitle',
+  ];
+  for (const sel of selectors) {
+    try {
+      const el = document.querySelector(sel);
+      const raw = el && el.textContent.trim();
+      if (raw) {
+        const cleaned = cleanLinkedInText(raw);
+        if (cleaned && cleaned.length > 2) return cleaned;
+      }
+    } catch (_) {}
+  }
+  return '';
+}
+
+function extractContactTitle(platform) {
+  if (platform === 'linkedin') return extractLinkedInTitle();
+  return '';
 }
 
 // ---- Gmail ----
@@ -1347,6 +1386,7 @@ async function openModal(contactName, threadUrl, platform, prefillDescription) {
   // ---- First Name / Last Name (CRM) ----
   const parsed = parseContactName(contactName);
   const profileUrl = platform === 'linkedin' ? extractLinkedInProfileUrl() : '';
+  const contactTitle = extractContactTitle(platform);
 
   const nameRow = document.createElement('div');
   nameRow.className = 'lts-field-group lts-name-row';
@@ -1380,6 +1420,24 @@ async function openModal(contactName, threadUrl, platform, prefillDescription) {
   lnCol.append(lnLabel, lnInput);
 
   nameRow.append(fnCol, lnCol);
+
+  // ---- Title / Headline ----
+  const titleRow = document.createElement('div');
+  titleRow.className = 'lts-field-group';
+
+  const titleLabel = document.createElement('label');
+  titleLabel.className = 'lts-field-label';
+  titleLabel.textContent = 'Title';
+  titleLabel.htmlFor = 'lts-title';
+
+  const titleInput = document.createElement('input');
+  titleInput.type = 'text';
+  titleInput.id = 'lts-title';
+  titleInput.className = 'lts-input';
+  titleInput.value = contactTitle;
+  titleInput.placeholder = 'e.g. CEO at Acme Corp';
+
+  titleRow.append(titleLabel, titleInput);
 
   // ---- LinkedIn Profile URL ----
   const profileRow = document.createElement('div');
@@ -1536,12 +1594,13 @@ async function openModal(contactName, threadUrl, platform, prefillDescription) {
     const finalFirstName = fnInput.value.trim();
     const finalLastName = lnInput.value.trim();
     const finalProfileUrl = profileInput.value.trim();
+    const finalTitle = titleInput.value.trim();
     const finalContactName = `${finalFirstName} ${finalLastName}`.trim() || contactName;
-    handleSave(finalContactName, threadUrl, descInput, selectedDays, errorEl, platform, selectedStage, finalFirstName, finalLastName, finalProfileUrl);
+    handleSave(finalContactName, threadUrl, descInput, selectedDays, errorEl, platform, selectedStage, finalFirstName, finalLastName, finalProfileUrl, finalTitle);
   });
 
   // ---- Assemble ----
-  modal.append(header, nameRow, profileRow, threadRow, stageRow, followupRow, descRow, errorEl, saveBtn);
+  modal.append(header, nameRow, titleRow, profileRow, threadRow, stageRow, followupRow, descRow, errorEl, saveBtn);
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
 
@@ -1579,7 +1638,7 @@ function showExtensionReloadToast(message) {
   }, 3500);
 }
 
-async function handleSave(contactName, threadUrl, descInput, selectedDays, errorEl, platform, stage, firstName, lastName, profileUrl) {
+async function handleSave(contactName, threadUrl, descInput, selectedDays, errorEl, platform, stage, firstName, lastName, profileUrl, title) {
   try {
     const description = descInput.value.trim();
     const remindAt = daysFromNow(selectedDays);
@@ -1600,6 +1659,7 @@ async function handleSave(contactName, threadUrl, descInput, selectedDays, error
       firstName: firstName || '',
       lastName: lastName || '',
       contactName,
+      title: title || '',
       profileUrl: profileUrl || '',
       threadUrl,
       description,
