@@ -722,17 +722,30 @@ function renderTable(tasks, allTasks) {
     // Contact
     const tdContact = document.createElement('td');
     tdContact.className = 'td-contact';
+    const _displayName = (task.firstName || task.lastName) ? `${task.firstName || ''} ${task.lastName || ''}`.trim() : (task.contactName || 'Unknown');
+    const _initials = ((task.firstName || task.contactName || '?')[0] + (task.lastName || '')[0]).toUpperCase();
     const avatar = document.createElement('span');
     avatar.className = 'tbl-avatar';
-    avatar.textContent = task.contactName.charAt(0).toUpperCase();
+    avatar.textContent = _initials;
     if (task.completed) avatar.style.background = '#b0b8c4';
     else if (overdue)   avatar.style.background = '#f06a6a';
     const nameSpan = document.createElement('span');
     nameSpan.className = 'tbl-name';
-    nameSpan.textContent = task.contactName;
+    nameSpan.textContent = _displayName;
     nameSpan.style.cursor = 'pointer';
     nameSpan.addEventListener('click', () => openTimeline(task.contactName, allTasks));
-    tdContact.append(avatar, nameSpan);
+    if (task.profileUrl) {
+      const profIcon = document.createElement('a');
+      profIcon.href = task.profileUrl;
+      profIcon.target = '_blank';
+      profIcon.rel = 'noopener noreferrer';
+      profIcon.textContent = ' 👤';
+      profIcon.title = 'View LinkedIn profile';
+      profIcon.style.cssText = 'text-decoration:none;font-size:12px;margin-left:4px;';
+      tdContact.append(avatar, nameSpan, profIcon);
+    } else {
+      tdContact.append(avatar, nameSpan);
+    }
 
     // Owner
     const tdOwner = document.createElement('td');
@@ -875,16 +888,19 @@ function buildCard(task, allTasks) {
   contactBtn.title = 'View follow-up timeline';
   contactBtn.addEventListener('click', () => openTimeline(task.contactName, allTasks));
 
+  const _cardDisplayName = (task.firstName || task.lastName) ? `${task.firstName || ''} ${task.lastName || ''}`.trim() : (task.contactName || 'Unknown');
+  const _cardInitials = ((task.firstName || task.contactName || '?')[0] + (task.lastName || '')[0]).toUpperCase();
+
   const avatar = document.createElement('div');
   avatar.className = 'task-card__avatar';
-  avatar.textContent = task.contactName.charAt(0).toUpperCase();
+  avatar.textContent = _cardInitials;
 
   const nameBlock = document.createElement('div');
   nameBlock.className = 'task-card__name-block';
 
   const nameEl = document.createElement('p');
   nameEl.className = 'task-card__name';
-  nameEl.textContent = task.contactName;
+  nameEl.textContent = _cardDisplayName;
 
   const createdEl = document.createElement('p');
   createdEl.className = 'task-card__created';

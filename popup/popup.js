@@ -638,26 +638,45 @@ function buildTaskCard(task) {
   const topRow = document.createElement('div');
   topRow.className = 'task-card__top';
 
+  // Avatar
+  const displayName = (task.firstName || task.lastName) ? `${task.firstName || ''} ${task.lastName || ''}`.trim() : (task.contactName || 'Unknown');
+  const initials = ((task.firstName || task.contactName || '?')[0] + (task.lastName || '')[0]).toUpperCase();
+
+  const avatar = document.createElement('span');
+  avatar.className = 'task-card__avatar';
+  avatar.textContent = initials;
+
   const contactEl = document.createElement('span');
   contactEl.className = 'task-card__contact';
-  contactEl.textContent = task.contactName;
+  contactEl.textContent = displayName;
 
   const statusPill = document.createElement('span');
   const overdue = !task.completed && task.remindAt < Date.now();
   statusPill.className = `task-card__status ${task.completed ? 'status--done' : overdue ? 'status--overdue' : 'status--pending'}`;
   statusPill.textContent = task.completed ? 'Done' : overdue ? 'Overdue' : 'Pending';
 
-  topRow.append(contactEl, statusPill);
+  topRow.append(avatar, contactEl, statusPill);
 
-  // ---- Thread link ----
-  let threadEl = null;
+  // ---- Links row (profile + thread) ----
+  const linksRow = document.createElement('div');
+  linksRow.className = 'task-card__links';
+  if (task.profileUrl) {
+    const profLink = document.createElement('a');
+    profLink.className = 'task-card__profile-link';
+    profLink.href = task.profileUrl;
+    profLink.target = '_blank';
+    profLink.rel = 'noopener noreferrer';
+    profLink.textContent = '👤 Profile';
+    linksRow.appendChild(profLink);
+  }
   if (task.threadUrl) {
-    threadEl = document.createElement('a');
-    threadEl.className = 'task-card__thread';
-    threadEl.href = task.threadUrl;
-    threadEl.target = '_blank';
-    threadEl.rel = 'noopener noreferrer';
-    threadEl.textContent = '💬 Open message thread';
+    const threadLink = document.createElement('a');
+    threadLink.className = 'task-card__thread';
+    threadLink.href = task.threadUrl;
+    threadLink.target = '_blank';
+    threadLink.rel = 'noopener noreferrer';
+    threadLink.textContent = '💬 Thread';
+    linksRow.appendChild(threadLink);
   }
 
   // ---- Owner badge ----
@@ -666,7 +685,7 @@ function buildTaskCard(task) {
     if (ownerDef) {
       const ownerBadge = document.createElement('span');
       ownerBadge.className = 'task-card__owner';
-      ownerBadge.textContent = ownerDef.label[0]; // initial
+      ownerBadge.textContent = ownerDef.label[0];
       ownerBadge.title = ownerDef.label;
       ownerBadge.style.setProperty('--owner-color', ownerDef.color);
       ownerBadge.style.setProperty('--owner-bg', ownerDef.bg);
@@ -708,7 +727,7 @@ function buildTaskCard(task) {
 
   // ---- Assemble ----
   card.appendChild(topRow);
-  if (threadEl) card.appendChild(threadEl);
+  if (linksRow.children.length > 0) card.appendChild(linksRow);
   card.appendChild(followupEl);
   if (notesEl) card.appendChild(notesEl);
   card.appendChild(actions);

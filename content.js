@@ -544,28 +544,51 @@ async function renderPanelTasks() {
     const card = document.createElement('div');
     card.className = 'lts-ptask' + (task.completed ? ' lts-ptask--done' : '');
 
+    // Avatar + name row
     const top = document.createElement('div');
     top.className = 'lts-ptask__top';
+
+    const avatar = document.createElement('span');
+    avatar.className = 'lts-ptask__avatar';
+    avatar.textContent = getTaskInitials(task);
+
+    const nameBlock = document.createElement('div');
+    nameBlock.className = 'lts-ptask__name-block';
     const name = document.createElement('span');
     name.className = 'lts-ptask__name';
-    name.textContent = task.contactName;
+    name.textContent = getTaskDisplayName(task);
+    nameBlock.appendChild(name);
+
+    // Profile + thread links row
+    const links = document.createElement('div');
+    links.className = 'lts-ptask__links';
+    if (task.profileUrl) {
+      const profLink = document.createElement('a');
+      profLink.className = 'lts-ptask__profile-link';
+      profLink.href = task.profileUrl;
+      profLink.target = '_blank';
+      profLink.rel = 'noopener noreferrer';
+      profLink.title = 'View profile';
+      profLink.textContent = '👤 Profile';
+      links.appendChild(profLink);
+    }
+    if (task.threadUrl) {
+      const threadLink = document.createElement('a');
+      threadLink.className = 'lts-ptask__thread';
+      threadLink.href = task.threadUrl;
+      threadLink.target = '_blank';
+      threadLink.rel = 'noopener noreferrer';
+      threadLink.textContent = '💬 Thread';
+      links.appendChild(threadLink);
+    }
+    if (links.children.length > 0) nameBlock.appendChild(links);
 
     const overdue = !task.completed && task.remindAt < Date.now();
     const status = document.createElement('span');
     status.className = 'lts-ptask__status lts-ptask__status--' + (task.completed ? 'done' : overdue ? 'overdue' : 'pending');
     status.textContent = task.completed ? 'Done' : overdue ? 'Overdue' : 'Pending';
-    top.append(name, status);
+    top.append(avatar, nameBlock, status);
     card.appendChild(top);
-
-    if (task.threadUrl) {
-      const link = document.createElement('a');
-      link.className = 'lts-ptask__thread';
-      link.href = task.threadUrl;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      link.textContent = '💬 Open thread';
-      card.appendChild(link);
-    }
 
     const followup = document.createElement('p');
     followup.className = 'lts-ptask__followup';
@@ -898,6 +921,52 @@ function extractContactName(platform) {
     case 'whatsapp':  return extractWhatsAppName();
     default:          return 'Unknown Contact';
   }
+}
+
+// ===== CRM helpers =====
+function parseContactName(fullName) {
+  const trimmed = (fullName || '').trim();
+  if (!trimmed || trimmed === 'Unknown Contact') return { firstName: '', lastName: '' };
+  const parts = trimmed.split(/\s+/);
+  return { firstName: parts[0] || '', lastName: parts.slice(1).join(' ') || '' };
+}
+
+function getTaskDisplayName(task) {
+  if (task.firstName || task.lastName) return `${task.firstName || ''} ${task.lastName || ''}`.trim();
+  return task.contactName || 'Unknown';
+}
+
+function getTaskInitials(task) {
+  const first = (task.firstName || task.contactName || '?')[0] || '?';
+  const last = (task.lastName || '')[0] || '';
+  return (first + last).toUpperCase();
+}
+
+function extractLinkedInProfileUrl() {
+  const selectors = [
+    '.msg-thread__link-to-profile',
+    '.msg-entity-lockup__entity-title a',
+    'a[href*="/in/"]',
+  ];
+  for (const sel of selectors) {
+    try {
+      const el = document.querySelector(sel);
+      if (el) {
+        const href = el.href || el.getAttribute('href') || '';
+        if (href.includes('/in/')) return href.split('?')[0]; // strip query params
+      }
+    } catch (_) {}
+  }
+  // Try broader search in conversation header
+  const headerEl = document.querySelector('.msg-thread, .scaffold-layout__detail');
+  if (headerEl) {
+    const links = headerEl.querySelectorAll('a[href*="/in/"]');
+    for (const link of links) {
+      const href = link.href || '';
+      if (href.includes('/in/')) return href.split('?')[0];
+    }
+  }
+  return '';
 }
 
 // ---- LinkedIn ----
@@ -1275,19 +1344,59 @@ async function openModal(contactName, threadUrl, platform, prefillDescription) {
 
   header.append(title, sourceBadge, closeBtn);
 
-  // ---- Contact name ----
-  const contactRow = document.createElement('div');
-  contactRow.className = 'lts-field-group';
+  // ---- First Name / Last Name (CRM) ----
+  const parsed = parseContactName(contactName);
+  const profileUrl = platform === 'linkedin' ? extractLinkedInProfileUrl() : '';
 
-  const contactLabel = document.createElement('p');
-  contactLabel.className = 'lts-field-label';
-  contactLabel.textContent = 'Contact';
+  const nameRow = document.createElement('div');
+  nameRow.className = 'lts-field-group lts-name-row';
 
-  const contactValue = document.createElement('p');
-  contactValue.className = 'lts-contact-name';
-  contactValue.textContent = contactName;
+  const fnCol = document.createElement('div');
+  fnCol.className = 'lts-name-col';
+  const fnLabel = document.createElement('label');
+  fnLabel.className = 'lts-field-label';
+  fnLabel.textContent = 'First Name';
+  fnLabel.htmlFor = 'lts-firstname';
+  const fnInput = document.createElement('input');
+  fnInput.type = 'text';
+  fnInput.id = 'lts-firstname';
+  fnInput.className = 'lts-input';
+  fnInput.value = parsed.firstName;
+  fnInput.placeholder = 'First name';
+  fnCol.append(fnLabel, fnInput);
 
-  contactRow.append(contactLabel, contactValue);
+  const lnCol = document.createElement('div');
+  lnCol.className = 'lts-name-col';
+  const lnLabel = document.createElement('label');
+  lnLabel.className = 'lts-field-label';
+  lnLabel.textContent = 'Last Name';
+  lnLabel.htmlFor = 'lts-lastname';
+  const lnInput = document.createElement('input');
+  lnInput.type = 'text';
+  lnInput.id = 'lts-lastname';
+  lnInput.className = 'lts-input';
+  lnInput.value = parsed.lastName;
+  lnInput.placeholder = 'Last name';
+  lnCol.append(lnLabel, lnInput);
+
+  nameRow.append(fnCol, lnCol);
+
+  // ---- LinkedIn Profile URL ----
+  const profileRow = document.createElement('div');
+  profileRow.className = 'lts-field-group';
+
+  const profileLabel = document.createElement('p');
+  profileLabel.className = 'lts-field-label';
+  profileLabel.textContent = platform === 'linkedin' ? 'LinkedIn Profile' : 'Profile';
+
+  const profileInput = document.createElement('input');
+  profileInput.type = 'url';
+  profileInput.id = 'lts-profile-url';
+  profileInput.className = 'lts-input';
+  profileInput.value = profileUrl;
+  profileInput.placeholder = platform === 'linkedin' ? 'https://linkedin.com/in/...' : 'Profile URL';
+
+  profileRow.append(profileLabel, profileInput);
 
   // ---- Thread URL (readonly link) ----
   const threadRow = document.createElement('div');
@@ -1295,7 +1404,7 @@ async function openModal(contactName, threadUrl, platform, prefillDescription) {
 
   const threadLabel = document.createElement('p');
   threadLabel.className = 'lts-field-label';
-  threadLabel.textContent = cfg.thread; // platform-specific label
+  threadLabel.textContent = cfg.thread;
 
   const threadLink = document.createElement('a');
   threadLink.className = 'lts-thread-url';
@@ -1424,11 +1533,15 @@ async function openModal(contactName, threadUrl, platform, prefillDescription) {
   saveBtn.addEventListener('mouseleave', () => saveBtn.style.setProperty('background', cfg.color, 'important'));
 
   saveBtn.addEventListener('click', () => {
-    handleSave(contactName, threadUrl, descInput, selectedDays, errorEl, platform, selectedStage);
+    const finalFirstName = fnInput.value.trim();
+    const finalLastName = lnInput.value.trim();
+    const finalProfileUrl = profileInput.value.trim();
+    const finalContactName = `${finalFirstName} ${finalLastName}`.trim() || contactName;
+    handleSave(finalContactName, threadUrl, descInput, selectedDays, errorEl, platform, selectedStage, finalFirstName, finalLastName, finalProfileUrl);
   });
 
   // ---- Assemble ----
-  modal.append(header, contactRow, threadRow, stageRow, followupRow, descRow, errorEl, saveBtn);
+  modal.append(header, nameRow, profileRow, threadRow, stageRow, followupRow, descRow, errorEl, saveBtn);
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
 
@@ -1466,7 +1579,7 @@ function showExtensionReloadToast(message) {
   }, 3500);
 }
 
-async function handleSave(contactName, threadUrl, descInput, selectedDays, errorEl, platform, stage) {
+async function handleSave(contactName, threadUrl, descInput, selectedDays, errorEl, platform, stage, firstName, lastName, profileUrl) {
   try {
     const description = descInput.value.trim();
     const remindAt = daysFromNow(selectedDays);
@@ -1484,7 +1597,10 @@ async function handleSave(contactName, threadUrl, descInput, selectedDays, error
 
     const task = {
       id: `task_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      firstName: firstName || '',
+      lastName: lastName || '',
       contactName,
+      profileUrl: profileUrl || '',
       threadUrl,
       description,
       remindAt: remindAt.getTime(),

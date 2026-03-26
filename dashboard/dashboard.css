@@ -1,6 +1,6 @@
-/* dashboard/dashboard.css — Asana-inspired clean design */
+/* dashboard/dashboard.css — Cobi-inspired dark CRM theme */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -9,34 +9,34 @@
 [hidden] { display: none !important; }
 
 :root {
-  /* Asana palette */
-  --coral:       #f06a6a;
-  --coral-dark:  #d95f5f;
-  --coral-light: #fef3f2;
-  --indigo:      #4573d2;
-  --indigo-light:#eef2fc;
-  --green:       #2da44e;
-  --green-light: #edfbf2;
-  --amber:       #c57d00;
-  --amber-light: #fff8e8;
-  --red:         #d32f2f;
-  --red-light:   #fdecea;
+  /* Cobi dark palette */
+  --coral:       #c8ff00;
+  --coral-dark:  #b3e600;
+  --coral-light: rgba(200,255,0,0.08);
+  --indigo:      #c8ff00;
+  --indigo-light: rgba(200,255,0,0.08);
+  --green:       #2ecc71;
+  --green-light: rgba(46,204,113,0.12);
+  --amber:       #ffd54f;
+  --amber-light: rgba(255,200,0,0.1);
+  --red:         #FF4CB4;
+  --red-light:   rgba(255,76,180,0.1);
 
-  /* Neutral */
-  --text-primary:   #1e1f21;
-  --text-secondary: #6f7782;
-  --text-tertiary:  #9ba4b0;
-  --border:         #e8eaed;
-  --border-strong:  #d4d7db;
-  --surface:        #f9fafb;
-  --white:          #ffffff;
+  /* Dark neutral */
+  --text-primary:   #e8e8ed;
+  --text-secondary: rgba(255,255,255,0.45);
+  --text-tertiary:  rgba(255,255,255,0.3);
+  --border:         rgba(255,255,255,0.06);
+  --border-strong:  rgba(255,255,255,0.1);
+  --surface:        #0f0f14;
+  --white:          #1a1a24;
 
   --sidebar-w: 228px;
   --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
 
-  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 html, body {
@@ -800,7 +800,7 @@ body { display: flex; min-height: 100vh; }
 }
 .task-table tbody tr:last-child { border-bottom: none; }
 .task-table tbody tr:hover { background: #fafbfc; }
-.task-table tbody tr.tr--overdue { background: #fff9f9; }
+.task-table tbody tr.tr--overdue { background: rgba(255,76,180,0.04); }
 .task-table tbody tr.tr--done    { opacity: 0.55; }
 
 .task-table td {
@@ -1427,8 +1427,8 @@ body { display: flex; min-height: 100vh; }
   gap: 12px;
   flex-wrap: wrap;
   padding: 11px 20px;
-  background: #fff8e8;
-  border-bottom: 1px solid #f6c84e;
+  background: rgba(255,200,0,0.08);
+  border-bottom: 1px solid rgba(255,200,0,0.15);
   /* Sits at the very top of main, above stats bar */
 }
 .freemium-banner__text {
