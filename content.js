@@ -970,49 +970,23 @@ function extractLinkedInProfileUrl() {
 }
 
 // ---- LinkedIn ----
-function cleanLinkedInText(text) {
-  // Remove "Status is offline", "Status is online", etc.
-  return (text || '').replace(/Status is (offline|online|busy|away|dnd)\s*/gi, '').trim();
-}
-
-// Split raw LinkedIn text into { name, title }
-// LinkedIn often merges name + headline into one element:
-// "Deniz Sahin VC at Almaz Capital" or "John Smith CEO & Founder of iCab"
+// Split raw LinkedIn text on "Status is offline/online" boundary
+// Pattern: "{Name} Status is offline {Title/Headline}"
+// e.g. "vikas singh Status is offline xyz at dsfd"
+//   → name: "vikas singh", title: "xyz at dsfd"
 function splitLinkedInNameAndTitle(rawText) {
-  const cleaned = cleanLinkedInText(rawText);
-  if (!cleaned) return { name: '', title: '' };
+  const text = (rawText || '').trim();
+  if (!text) return { name: '', title: '' };
 
-  // Title indicators — if any of these appear, everything from that word onward is title
-  const titlePatterns = [
-    /\b(CEO|CTO|COO|CFO|CMO|CPO|CIO|CISO|VP|SVP|EVP|AVP|Director|Manager|Head|Lead|Founder|Co-founder|Cofounder|Partner|Principal|President|Chairman|Owner|Consultant|Advisor|Analyst|Engineer|Developer|Designer)\b/i,
-    /\bat\s+[A-Z]/,                    // "at CompanyName"
-    /\b(ex-|former\s)/i,               // "ex-Visa", "former Google"
-    /[|·—–]/,                           // pipe/dot/dash separators common in headlines
-    /\bScaling\b|\bBuilding\b|\bHelping\b|\bDriving\b|\bTrusted\b/i, // action words in headlines
-  ];
-
-  // Try to find where the title starts
-  for (const pattern of titlePatterns) {
-    const match = cleaned.match(pattern);
-    if (match && match.index > 2) {
-      const namePart = cleaned.slice(0, match.index).trim();
-      const titlePart = cleaned.slice(match.index).trim();
-      // Only accept if name part looks like a real name (1-4 words)
-      const nameWords = namePart.split(/\s+/);
-      if (nameWords.length >= 1 && nameWords.length <= 4 && titlePart.length > 2) {
-        return { name: namePart, title: titlePart };
-      }
-    }
+  const statusMatch = text.match(/\s*Status is (offline|online|busy|away|dnd)\s*/i);
+  if (statusMatch) {
+    const name = text.slice(0, statusMatch.index).trim();
+    const title = text.slice(statusMatch.index + statusMatch[0].length).trim();
+    return { name: name || 'Unknown Contact', title };
   }
 
-  // If no title detected, check if it's more than 3 words — likely has title embedded
-  const words = cleaned.split(/\s+/);
-  if (words.length > 3) {
-    // Assume first 2 words are name, rest is title
-    return { name: words.slice(0, 2).join(' '), title: words.slice(2).join(' ') };
-  }
-
-  return { name: cleaned, title: '' };
+  // No status marker — return whole text as name
+  return { name: text, title: '' };
 }
 
 function extractLinkedInName() {
