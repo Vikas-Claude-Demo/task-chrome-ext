@@ -324,18 +324,20 @@ body { display: flex; min-height: 100vh; }
 .sidebar__footer {
   padding: 14px 12px;
   border-top: 1px solid var(--border);
+  margin-top: auto;
 }
 .sidebar__linkedin-btn {
   display: block;
   text-align: center;
   padding: 8px 12px;
   background: var(--coral);
-  color: var(--white);
+  color: #0f0f14;
   border-radius: 20px;
   text-decoration: none;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 400;
   transition: background 0.15s;
+  margin-bottom: 10px;
 }
 .sidebar__linkedin-btn:hover { background: var(--coral-dark); }
 
@@ -708,8 +710,8 @@ body { display: flex; min-height: 100vh; }
   min-width: 0;
 }
 .sidebar__user-name {
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 400;
   color: var(--text-primary);
 }
 .sidebar__user-email {
@@ -721,31 +723,36 @@ body { display: flex; min-height: 100vh; }
 }
 .sidebar__footer-actions {
   display: flex;
-  gap: 6px;
-  margin-top: 4px;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
 }
 .sidebar__theme-toggle,
 .sidebar__settings-btn,
 .sidebar__signout-btn {
-  width: 32px !important;
-  min-width: 32px !important;
-  height: 32px;
+  flex: 1;
+  height: 30px;
   border-radius: 8px;
   border: 1px solid var(--border-strong);
   background: var(--surface);
   cursor: pointer;
-  font-size: 14px;
+  font-size: 13px;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: background 0.12s;
   color: var(--text-secondary);
   padding: 0;
+  min-width: 0;
+  width: auto !important;
 }
 .sidebar__theme-toggle:hover,
 .sidebar__settings-btn:hover,
 .sidebar__signout-btn:hover {
   background: var(--border-strong);
+  color: var(--text-primary);
 }
 
 /* ===================================================
