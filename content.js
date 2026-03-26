@@ -975,6 +975,46 @@ function cleanLinkedInText(text) {
   return (text || '').replace(/Status is (offline|online|busy|away|dnd)\s*/gi, '').trim();
 }
 
+// Split raw LinkedIn text into { name, title }
+// LinkedIn often merges name + headline into one element:
+// "Deniz Sahin VC at Almaz Capital" or "John Smith CEO & Founder of iCab"
+function splitLinkedInNameAndTitle(rawText) {
+  const cleaned = cleanLinkedInText(rawText);
+  if (!cleaned) return { name: '', title: '' };
+
+  // Title indicators — if any of these appear, everything from that word onward is title
+  const titlePatterns = [
+    /\b(CEO|CTO|COO|CFO|CMO|CPO|CIO|CISO|VP|SVP|EVP|AVP|Director|Manager|Head|Lead|Founder|Co-founder|Cofounder|Partner|Principal|President|Chairman|Owner|Consultant|Advisor|Analyst|Engineer|Developer|Designer)\b/i,
+    /\bat\s+[A-Z]/,                    // "at CompanyName"
+    /\b(ex-|former\s)/i,               // "ex-Visa", "former Google"
+    /[|·—–]/,                           // pipe/dot/dash separators common in headlines
+    /\bScaling\b|\bBuilding\b|\bHelping\b|\bDriving\b|\bTrusted\b/i, // action words in headlines
+  ];
+
+  // Try to find where the title starts
+  for (const pattern of titlePatterns) {
+    const match = cleaned.match(pattern);
+    if (match && match.index > 2) {
+      const namePart = cleaned.slice(0, match.index).trim();
+      const titlePart = cleaned.slice(match.index).trim();
+      // Only accept if name part looks like a real name (1-4 words)
+      const nameWords = namePart.split(/\s+/);
+      if (nameWords.length >= 1 && nameWords.length <= 4 && titlePart.length > 2) {
+        return { name: namePart, title: titlePart };
+      }
+    }
+  }
+
+  // If no title detected, check if it's more than 3 words — likely has title embedded
+  const words = cleaned.split(/\s+/);
+  if (words.length > 3) {
+    // Assume first 2 words are name, rest is title
+    return { name: words.slice(0, 2).join(' '), title: words.slice(2).join(' ') };
+  }
+
+  return { name: cleaned, title: '' };
+}
+
 function extractLinkedInName() {
   const selectors = [
     '.msg-thread__link-to-profile',
@@ -989,8 +1029,8 @@ function extractLinkedInName() {
       const el = document.querySelector(sel);
       const raw = el && el.textContent.trim();
       if (raw) {
-        const cleaned = cleanLinkedInText(raw);
-        if (cleaned) return cleaned;
+        const { name } = splitLinkedInNameAndTitle(raw);
+        if (name) return name;
       }
     } catch (_) {}
   }
@@ -1001,8 +1041,8 @@ function extractLinkedInName() {
       const el = container.querySelector(tag);
       const raw = el && el.textContent.trim();
       if (raw && raw.length > 1) {
-        const cleaned = cleanLinkedInText(raw);
-        if (cleaned) return cleaned;
+        const { name } = splitLinkedInNameAndTitle(raw);
+        if (name) return name;
       }
     }
   }
@@ -1010,20 +1050,38 @@ function extractLinkedInName() {
 }
 
 function extractLinkedInTitle() {
-  // Extract headline/title text from LinkedIn messaging header
-  const selectors = [
+  // First try dedicated subtitle element
+  const subtitleSelectors = [
     '.msg-entity-lockup__entity-title + .msg-entity-lockup__entity-subtitle',
     '.msg-entity-lockup__entity-subtitle',
     '.msg-overlay-conversation-bubble__subtitle',
     '.msg-thread .msg-entity-lockup__entity-subtitle',
   ];
-  for (const sel of selectors) {
+  for (const sel of subtitleSelectors) {
     try {
       const el = document.querySelector(sel);
       const raw = el && el.textContent.trim();
       if (raw) {
         const cleaned = cleanLinkedInText(raw);
         if (cleaned && cleaned.length > 2) return cleaned;
+      }
+    } catch (_) {}
+  }
+
+  // Fall back: extract title from the combined name+title element
+  const nameSelectors = [
+    '.msg-thread__link-to-profile',
+    '.msg-entity-lockup__entity-title',
+    '.msg-overlay-conversation-bubble__participant-names',
+    '.msg-overlay-conversation-bubble__title',
+  ];
+  for (const sel of nameSelectors) {
+    try {
+      const el = document.querySelector(sel);
+      const raw = el && el.textContent.trim();
+      if (raw) {
+        const { title } = splitLinkedInNameAndTitle(raw);
+        if (title) return title;
       }
     } catch (_) {}
   }
