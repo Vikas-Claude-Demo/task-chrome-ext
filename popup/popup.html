@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nudge</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div id="popup-root">
+
+    <!-- AUTH GATE: hidden by default — only shown via JS modal overlay now -->
+    <div id="auth-gate" class="auth-gate" hidden>
+      <div class="auth-logo">📋</div>
+      <h2 class="auth-title">Nudge</h2>
+      <p class="auth-subtitle" id="auth-subtitle">One tap. Back in the conversation</p>
+      <form id="auth-form" class="auth-form" novalidate>
+        <input id="auth-email" type="email" class="auth-input"
+               placeholder="Email" autocomplete="email" required />
+        <input id="auth-password" type="password" class="auth-input"
+               placeholder="Password" autocomplete="current-password" required />
+        <p id="auth-error" class="auth-error" hidden></p>
+        <button type="submit" id="auth-submit" class="auth-submit-btn">Sign In</button>
+      </form>
+      <p class="auth-switch">
+        <span id="auth-switch-text">Don't have an account?</span>
+        <button type="button" id="auth-switch-btn" class="auth-switch-btn">Sign Up</button>
+      </p>
+    </div>
+
+    <!-- APP CONTENT: visible immediately — no auth blocking -->
+    <div id="app-content">
+
+      <header class="popup-header">
+        <h1 class="popup-header__title">Nudge</h1>
+        <div class="popup-header__right">
+          <span id="badge-count" class="popup-header__badge" aria-label="Pending tasks" hidden>0</span>
+          <button id="open-dashboard-btn" class="popup-header__expand" title="Open full dashboard">⤢</button>
+          <button id="signout-btn" class="popup-header__signout" title="Sign in">Sign In</button>
+        </div>
+      </header>
+
+      <div id="owner-bar" class="owner-bar">
+        <span class="owner-bar__label">Viewing as</span>
+        <div id="owner-pills" class="owner-pills" role="group" aria-label="Task owner"></div>
+      </div>
+
+      <div id="filter-tabs" class="popup-tabs" role="tablist" aria-label="Filter tasks">
+        <button class="tab-btn tab-btn--active" data-filter="today" role="tab" aria-selected="true">☀️ Today</button>
+        <button class="tab-btn" data-filter="pending" role="tab" aria-selected="false">Pending</button>
+        <button class="tab-btn" data-filter="completed" role="tab" aria-selected="false">Completed</button>
+      </div>
+
+      <div id="task-list-container" role="list">
+        <!-- Task cards rendered by popup.js -->
+      </div>
+
+      <p id="empty-state" class="empty-state" hidden>
+        No tasks yet.<br />Open a LinkedIn message and click <strong>"+ Save as Task"</strong> to get started.
+      </p>
+
+    </div><!-- end #app-content -->
+
+  </div>
+
+  <script src="../shared/config.js"></script>
+  <script src="../shared/firebase-storage.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

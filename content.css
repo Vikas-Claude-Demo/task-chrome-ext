@@ -1,0 +1,314 @@
+/* content.css — Asana-inspired modal + floating button */
+
+/* ===================================================
+   Floating Button
+=================================================== */
+#lts-float-btn {
+  position: fixed !important;
+  bottom: 80px !important;
+  right: 24px !important;
+  z-index: 99998 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 7px !important;
+  padding: 10px 18px !important;
+  background: #f06a6a !important;
+  color: #ffffff !important;
+  border: none !important;
+  border-radius: 20px !important;
+  font-size: 13.5px !important;
+  font-weight: 600 !important;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+  cursor: pointer !important;
+  box-shadow: 0 2px 12px rgba(240,106,106,0.35) !important;
+  transition: background 0.15s, box-shadow 0.15s, transform 0.1s !important;
+  white-space: nowrap !important;
+  letter-spacing: -0.1px !important;
+}
+#lts-float-btn:hover {
+  background: #d95f5f !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 16px rgba(240,106,106,0.4) !important;
+}
+#lts-float-btn:active { transform: translateY(0) !important; }
+
+/* ===================================================
+   Overlay
+=================================================== */
+#lts-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  background: rgba(0,0,0,0.4) !important;
+  z-index: 99999 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 16px !important;
+  backdrop-filter: blur(2px) !important;
+}
+
+/* ===================================================
+   Modal
+=================================================== */
+#lts-modal {
+  background: #ffffff !important;
+  border-radius: 12px !important;
+  padding: 0 !important;
+  width: 100% !important;
+  max-width: 440px !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.05) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+  color: #1e1f21 !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+  -webkit-font-smoothing: antialiased !important;
+}
+
+/* ===================================================
+   Modal Header
+=================================================== */
+.lts-modal-header {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 14px 18px !important;
+  background: #f06a6a !important;
+}
+
+.lts-modal-title {
+  margin: 0 !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  color: #ffffff !important;
+  letter-spacing: -0.2px !important;
+}
+
+/* Platform source badge */
+.lts-source-badge {
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  color: rgba(255,255,255,0.92) !important;
+  background: rgba(0,0,0,0.15) !important;
+  border-radius: 20px !important;
+  padding: 2px 9px !important;
+  letter-spacing: 0.1px !important;
+  margin-left: auto !important;
+  margin-right: 4px !important;
+  white-space: nowrap !important;
+}
+
+.lts-close-btn {
+  background: transparent !important;
+  border: none !important;
+  color: rgba(255,255,255,0.75) !important;
+  font-size: 15px !important;
+  cursor: pointer !important;
+  padding: 3px 6px !important;
+  border-radius: 6px !important;
+  line-height: 1 !important;
+  flex-shrink: 0 !important;
+  transition: background 0.12s, color 0.12s !important;
+}
+.lts-close-btn:hover {
+  color: #ffffff !important;
+  background: rgba(255,255,255,0.15) !important;
+}
+
+/* ===================================================
+   Field Groups
+=================================================== */
+.lts-field-group {
+  padding: 12px 18px !important;
+  border-bottom: 1px solid #f0f2f5 !important;
+}
+
+.lts-field-label {
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.6px !important;
+  color: #9ba4b0 !important;
+  margin: 0 0 5px 0 !important;
+}
+
+/* ===================================================
+   Contact name
+=================================================== */
+.lts-contact-name {
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  color: #1e1f21 !important;
+  margin: 0 !important;
+}
+
+/* ===================================================
+   Thread URL
+=================================================== */
+.lts-thread-url {
+  display: inline-flex !important;
+  align-items: center !important;
+  font-size: 12.5px !important;
+  color: #4573d2 !important;
+  text-decoration: none !important;
+  word-break: break-all !important;
+  padding: 4px 9px !important;
+  background: #eef2fc !important;
+  border-radius: 6px !important;
+  font-weight: 500 !important;
+  transition: background 0.12s !important;
+}
+.lts-thread-url:hover {
+  background: #dce5f8 !important;
+  text-decoration: underline !important;
+}
+
+/* ===================================================
+   Follow-up pills
+=================================================== */
+.lts-pills {
+  display: flex !important;
+  gap: 6px !important;
+  flex-wrap: wrap !important;
+  margin-bottom: 8px !important;
+}
+
+.lts-pill {
+  padding: 5px 13px !important;
+  border-radius: 20px !important;
+  border: 1px solid #d4d7db !important;
+  background: #ffffff !important;
+  color: #6f7782 !important;
+  font-size: 12.5px !important;
+  font-weight: 500 !important;
+  font-family: inherit !important;
+  cursor: pointer !important;
+  transition: border-color 0.12s, color 0.12s, background 0.12s !important;
+}
+.lts-pill:hover {
+  border-color: #f06a6a !important;
+  color: #d95f5f !important;
+}
+.lts-pill--active {
+  background: #f06a6a !important;
+  border-color: #f06a6a !important;
+  color: #ffffff !important;
+  font-weight: 600 !important;
+}
+
+.lts-reminder-preview {
+  font-size: 12px !important;
+  color: #9ba4b0 !important;
+  margin: 0 !important;
+  font-weight: 400 !important;
+}
+
+/* ===================================================
+   Notes textarea
+=================================================== */
+.lts-optional {
+  font-weight: 400 !important;
+  color: #b8bec7 !important;
+  font-size: 11px !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+}
+
+.lts-input {
+  display: block !important;
+  width: 100% !important;
+  padding: 8px 10px !important;
+  border: 1px solid #d4d7db !important;
+  border-radius: 6px !important;
+  font-size: 13px !important;
+  font-family: inherit !important;
+  color: #1e1f21 !important;
+  background: #fafbfc !important;
+  box-sizing: border-box !important;
+  -webkit-appearance: none !important;
+  transition: border-color 0.15s, box-shadow 0.15s !important;
+}
+.lts-input::placeholder { color: #b8bec7 !important; }
+.lts-input:focus {
+  outline: none !important;
+  border-color: #4573d2 !important;
+  box-shadow: 0 0 0 3px rgba(69,115,210,0.12) !important;
+  background: #fff !important;
+}
+.lts-textarea {
+  resize: vertical !important;
+  min-height: 64px !important;
+  line-height: 1.55 !important;
+}
+
+/* ===================================================
+   Error
+=================================================== */
+.lts-error {
+  font-size: 12px !important;
+  color: #d32f2f !important;
+  padding: 0 18px !important;
+  margin: 0 !important;
+  font-weight: 500 !important;
+}
+.lts-hidden { display: none !important; }
+
+/* ===================================================
+   Stage select
+=================================================== */
+.lts-stage-select {
+  cursor: pointer !important;
+  padding-right: 28px !important;
+}
+
+/* ===================================================
+   Save button
+=================================================== */
+.lts-save-btn {
+  display: block !important;
+  width: calc(100% - 36px) !important;
+  margin: 14px 18px !important;
+  padding: 10px !important;
+  background: #f06a6a !important;
+  color: #ffffff !important;
+  border: none !important;
+  border-radius: 20px !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  font-family: inherit !important;
+  cursor: pointer !important;
+  letter-spacing: -0.1px !important;
+  transition: background 0.15s, box-shadow 0.15s !important;
+}
+.lts-save-btn:hover {
+  background: #d95f5f !important;
+  box-shadow: 0 2px 8px rgba(240,106,106,0.3) !important;
+}
+
+/* ===================================================
+   Success toast
+=================================================== */
+#lts-toast {
+  position: fixed !important;
+  bottom: 140px !important;
+  right: 24px !important;
+  z-index: 99999 !important;
+  background: #2da44e !important;
+  color: #ffffff !important;
+  padding: 9px 16px !important;
+  border-radius: 20px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+  box-shadow: 0 2px 12px rgba(45,164,78,0.3) !important;
+  opacity: 0 !important;
+  transform: translateY(8px) !important;
+  transition: opacity 0.18s, transform 0.18s !important;
+  pointer-events: none !important;
+  letter-spacing: -0.1px !important;
+}
+#lts-toast.lts-toast--visible {
+  opacity: 1 !important;
+  transform: translateY(0) !important;
+}

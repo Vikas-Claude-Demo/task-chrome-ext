@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nudge - Home</title>
+  <link rel="stylesheet" href="home.css" />
+</head>
+<body>
+  <main class="home-layout">
+    <section class="auth-panel">
+      <div class="auth-panel__inner">
+        <h1 class="auth-title">Nudge</h1>
+        <p id="auth-subtitle" class="auth-subtitle">One tap. Back in the conversation</p>
+
+        <form id="auth-form" class="auth-form" novalidate>
+          <input id="auth-email" type="email" class="auth-input" placeholder="Email" autocomplete="email" required />
+          <input id="auth-password" type="password" class="auth-input" placeholder="Password" autocomplete="current-password" required />
+          <p id="auth-error" class="auth-error" hidden></p>
+          <button id="auth-submit" type="submit" class="auth-submit">Sign In</button>
+        </form>
+
+        <p class="auth-switch">
+          <span id="auth-switch-text">Don't have an account?</span>
+          <button type="button" id="auth-switch-btn" class="auth-switch-btn">Sign Up</button>
+        </p>
+
+        <div class="auth-divider"><span>OR</span></div>
+        <button id="guest-btn" type="button" class="guest-btn">Continue as Guest</button>
+      </div>
+    </section>
+
+    <section class="visual-panel">
+      <div class="visual-card">
+        <img id="rotating-image" src="../icons/icon128.png" alt="Nudge preview" />
+      </div>
+    </section>
+  </main>
+
+  <script src="../shared/config.js"></script>
+  <script src="../shared/firebase-storage.js"></script>
+  <script src="home.js"></script>
+</body>
+</html>
