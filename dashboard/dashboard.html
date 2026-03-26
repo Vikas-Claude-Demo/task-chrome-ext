@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -27,7 +27,7 @@
     </p>
   </div>
 
-  <!-- APP CONTENT: visible immediately — no auth blocking -->
+  <!-- APP CONTENT -->
   <div id="app-content" style="display:contents">
 
   <aside class="sidebar">
@@ -37,41 +37,24 @@
     </div>
 
     <nav class="sidebar__nav">
-      <p class="nav-section-label">Views</p>
-      <button class="nav-btn nav-btn--active" data-filter="today">
-        <span class="nav-btn__icon">☀️</span>
-        <span class="nav-btn__label">Today</span>
-        <span class="nav-btn__count" id="count-today">0</span>
+      <button class="nav-btn nav-btn--active" data-tab="dashboard">
+        <span class="nav-btn__icon">📊</span>
+        <span class="nav-btn__label">Dashboard</span>
       </button>
-      <button class="nav-btn" data-filter="thisweek">
-        <span class="nav-btn__icon">📅</span>
-        <span class="nav-btn__label">This Week</span>
-        <span class="nav-btn__count" id="count-thisweek">0</span>
+      <button class="nav-btn" data-tab="customers">
+        <span class="nav-btn__icon">👥</span>
+        <span class="nav-btn__label">Customers</span>
       </button>
-      <button class="nav-btn" data-filter="all">
-        <span class="nav-btn__icon">📥</span>
-        <span class="nav-btn__label">All Tasks</span>
-        <span class="nav-btn__count" id="count-all">0</span>
-      </button>
-      <p class="nav-section-label" style="margin-top:8px;">Status</p>
-      <button class="nav-btn" data-filter="pending">
-        <span class="nav-btn__icon">⏳</span>
-        <span class="nav-btn__label">Pending</span>
-        <span class="nav-btn__count" id="count-pending">0</span>
-      </button>
-      <button class="nav-btn" data-filter="overdue">
-        <span class="nav-btn__icon">🔴</span>
-        <span class="nav-btn__label">Overdue</span>
-        <span class="nav-btn__count" id="count-overdue">0</span>
-      </button>
-      <button class="nav-btn" data-filter="completed">
+      <button class="nav-btn" data-tab="tasks">
         <span class="nav-btn__icon">✅</span>
-        <span class="nav-btn__label">Completed</span>
-        <span class="nav-btn__count" id="count-completed">0</span>
+        <span class="nav-btn__label">Tasks</span>
       </button>
     </nav>
 
     <div class="sidebar__footer">
+      <button id="theme-toggle" class="sidebar__theme-toggle" title="Toggle theme">
+        <span id="theme-icon">☀️</span>
+      </button>
       <a href="https://www.linkedin.com/messaging/" target="_blank" class="sidebar__linkedin-btn">
         Open LinkedIn Messaging
       </a>
@@ -83,84 +66,123 @@
 
   <main class="main" id="main-content">
 
-    <header class="main__header">
-      <div class="main__header-left">
-        <h1 class="main__title" id="page-title">All Tasks</h1>
-        <span class="main__subtitle" id="page-subtitle"></span>
-      </div>
-      <div class="main__header-right">
-        <div id="owner-filter-pills" class="owner-filter-pills" role="group" aria-label="Filter by owner"></div>
-        <input type="search" id="search-input" class="search-input" placeholder="Search by name or notes…" />
-        <select id="sort-select" class="sort-select">
-          <option value="remindAt-asc">Reminder ↑</option>
-          <option value="remindAt-desc">Reminder ↓</option>
-          <option value="createdAt-desc">Newest first</option>
-          <option value="createdAt-asc">Oldest first</option>
-          <option value="name-asc">Name A–Z</option>
-        </select>
-        <div class="view-toggle" role="group" aria-label="View mode">
-          <button class="view-btn" id="view-cards" title="Card view" aria-pressed="false">⊞</button>
-          <button class="view-btn view-btn--active" id="view-table" title="Table view" aria-pressed="true">☰</button>
+    <!-- ========== TAB 1: Dashboard Overview ========== -->
+    <section id="tab-dashboard" class="tab-panel tab-panel--active">
+      <header class="main__header">
+        <div class="main__header-left">
+          <h1 class="main__title">Dashboard</h1>
+          <span class="main__subtitle" id="dash-subtitle"></span>
+        </div>
+      </header>
+
+      <div id="dash-stats" class="stats-bar">
+        <div class="stat-card stat-card--today">
+          <span class="stat-card__number" id="dash-stat-today">0</span>
+          <span class="stat-card__label">Due Today</span>
+        </div>
+        <div class="stat-card stat-card--overdue">
+          <span class="stat-card__number" id="dash-stat-overdue">0</span>
+          <span class="stat-card__label">Overdue</span>
+        </div>
+        <div class="stat-card stat-card--week">
+          <span class="stat-card__number" id="dash-stat-week">0</span>
+          <span class="stat-card__label">This Week</span>
+        </div>
+        <div class="stat-card stat-card--done">
+          <span class="stat-card__number" id="dash-stat-customers">0</span>
+          <span class="stat-card__label">Customers</span>
         </div>
       </div>
-    </header>
 
-    <div id="stats-bar" class="stats-bar">
-      <div class="stat-card stat-card--today">
-        <span class="stat-card__number" id="stat-today">0</span>
-        <span class="stat-card__label">Today</span>
+      <div id="dash-today-section" class="dash-section">
+        <h2 class="dash-section__title">Today's Agenda</h2>
+        <div id="dash-today-list" class="task-grid" role="list"></div>
+        <div id="dash-today-empty" class="empty-state" hidden>
+          <div class="empty-state__icon">🎉</div>
+          <p class="empty-state__title">All clear for today</p>
+          <p class="empty-state__sub">No tasks due today. Enjoy your day!</p>
+        </div>
       </div>
-      <div class="stat-card stat-card--week">
-        <span class="stat-card__number" id="stat-week">0</span>
-        <span class="stat-card__label">This Week</span>
-      </div>
-      <div class="stat-card stat-card--pending">
-        <span class="stat-card__number" id="stat-pending">0</span>
-        <span class="stat-card__label">Pending</span>
-      </div>
-      <div class="stat-card stat-card--overdue">
-        <span class="stat-card__number" id="stat-overdue">0</span>
-        <span class="stat-card__label">Overdue</span>
-      </div>
-      <div class="stat-card stat-card--done">
-        <span class="stat-card__number" id="stat-done">0</span>
-        <span class="stat-card__label">Completed</span>
-      </div>
-    </div>
 
-    <div id="task-grid" class="task-grid" role="list">
-      <!-- Cards injected by dashboard.js -->
-    </div>
+      <div id="dash-overdue-section" class="dash-section" hidden>
+        <h2 class="dash-section__title dash-section__title--alert">Overdue — Needs Attention</h2>
+        <div id="dash-overdue-list" class="task-grid" role="list"></div>
+      </div>
+    </section>
 
-    <div id="task-table-wrap" class="task-table-wrap" hidden>
-      <table id="task-table" class="task-table">
-        <thead>
-          <tr>
-            <!-- Headers injected dynamically by dashboard.js based on current filter -->
-          </tr>
-        </thead>
-        <tbody id="task-table-body">
-          <!-- Rows injected by dashboard.js -->
-        </tbody>
-      </table>
-    </div>
+    <!-- ========== TAB 2: Customers ========== -->
+    <section id="tab-customers" class="tab-panel" hidden>
+      <header class="main__header">
+        <div class="main__header-left">
+          <h1 class="main__title">Customers</h1>
+          <span class="main__subtitle" id="customers-subtitle"></span>
+        </div>
+        <div class="main__header-right">
+          <input type="search" id="customer-search" class="search-input" placeholder="Search customers..." />
+        </div>
+      </header>
 
-    <div id="empty-state" class="empty-state" hidden>
-      <div class="empty-state__icon">📭</div>
-      <p class="empty-state__title">No tasks here</p>
-      <p class="empty-state__sub">Open a LinkedIn message and click <strong>"📋 Save as Task"</strong> to get started.</p>
-    </div>
+      <div id="customer-grid" class="customer-grid" role="list"></div>
+      <div id="customer-empty" class="empty-state" hidden>
+        <div class="empty-state__icon">👥</div>
+        <p class="empty-state__title">No customers yet</p>
+        <p class="empty-state__sub">Save a task from LinkedIn to add your first customer.</p>
+      </div>
+    </section>
+
+    <!-- ========== TAB 3: Tasks ========== -->
+    <section id="tab-tasks" class="tab-panel" hidden>
+      <header class="main__header">
+        <div class="main__header-left">
+          <h1 class="main__title" id="tasks-page-title">All Tasks</h1>
+          <span class="main__subtitle" id="tasks-page-subtitle"></span>
+        </div>
+        <div class="main__header-right">
+          <div id="task-sub-filters" class="task-sub-filters" role="group" aria-label="Filter tasks">
+            <button class="sub-filter-pill sub-filter-pill--active" data-filter="all">All</button>
+            <button class="sub-filter-pill" data-filter="pending">Pending</button>
+            <button class="sub-filter-pill" data-filter="overdue">Overdue</button>
+            <button class="sub-filter-pill" data-filter="completed">Completed</button>
+          </div>
+          <div id="owner-filter-pills" class="owner-filter-pills" role="group" aria-label="Filter by owner"></div>
+          <input type="search" id="search-input" class="search-input" placeholder="Search by name or notes..." />
+          <select id="sort-select" class="sort-select">
+            <option value="remindAt-asc">Reminder ↑</option>
+            <option value="remindAt-desc">Reminder ↓</option>
+            <option value="createdAt-desc">Newest first</option>
+            <option value="createdAt-asc">Oldest first</option>
+            <option value="name-asc">Name A–Z</option>
+          </select>
+          <div class="view-toggle" role="group" aria-label="View mode">
+            <button class="view-btn" id="view-cards" title="Card view" aria-pressed="false">⊞</button>
+            <button class="view-btn view-btn--active" id="view-table" title="Table view" aria-pressed="true">☰</button>
+          </div>
+        </div>
+      </header>
+
+      <div id="task-grid" class="task-grid" role="list"></div>
+      <div id="task-table-wrap" class="task-table-wrap" hidden>
+        <table id="task-table" class="task-table">
+          <thead><tr></tr></thead>
+          <tbody id="task-table-body"></tbody>
+        </table>
+      </div>
+      <div id="empty-state" class="empty-state" hidden>
+        <div class="empty-state__icon">📭</div>
+        <p class="empty-state__title">No tasks here</p>
+        <p class="empty-state__sub">Open a LinkedIn message and click <strong>"Save as Task"</strong> to get started.</p>
+      </div>
+    </section>
 
   </main>
 
   </div><!-- end #app-content -->
 
-  <!-- Timeline overlay (dimmed background) -->
+  <!-- Timeline overlay -->
   <div id="timeline-overlay" class="timeline-overlay tl-hidden"></div>
 
   <!-- Timeline slide-in panel -->
   <aside id="timeline-panel" class="timeline-panel tl-hidden" aria-label="Contact timeline">
-
     <header class="tl-header">
       <div class="tl-avatar" id="tl-avatar"></div>
       <div class="tl-info">
@@ -169,13 +191,8 @@
       </div>
       <button id="tl-close" class="tl-close" title="Close timeline">✕</button>
     </header>
-
     <div id="tl-latest-thread" class="tl-latest-thread"></div>
-
-    <div id="tl-body" class="tl-body" role="list">
-      <!-- Timeline items injected by JS -->
-    </div>
-
+    <div id="tl-body" class="tl-body" role="list"></div>
   </aside>
 
   <!-- Settings overlay -->
@@ -184,34 +201,28 @@
   <!-- Settings modal -->
   <div id="settings-modal" class="settings-modal settings-hidden" role="dialog"
        aria-modal="true" aria-labelledby="settings-modal-title">
-
     <div class="settings-modal__header">
       <h2 class="settings-modal__title" id="settings-modal-title">Settings</h2>
       <button id="settings-close" class="settings-modal__close" title="Close" aria-label="Close settings">&#x2715;</button>
     </div>
-
     <div class="settings-tabs" role="tablist">
       <button class="settings-tab settings-tab--active" data-tab="owners"
               role="tab" aria-selected="true" id="stab-owners">Owners</button>
       <button class="settings-tab" data-tab="stages"
               role="tab" aria-selected="false" id="stab-stages">Stages</button>
     </div>
-
     <div class="settings-panel" data-panel="owners" role="tabpanel" aria-labelledby="stab-owners">
       <div id="settings-owners-list" class="settings-list"></div>
       <button id="settings-add-owner" class="settings-add-btn">+ Add Owner</button>
     </div>
-
     <div class="settings-panel settings-panel--hidden" data-panel="stages" role="tabpanel" aria-labelledby="stab-stages">
       <div id="settings-stages-list" class="settings-list"></div>
       <button id="settings-add-stage" class="settings-add-btn">+ Add Stage</button>
     </div>
-
     <div class="settings-modal__footer">
       <button id="settings-cancel" class="settings-footer-btn settings-footer-btn--cancel">Cancel</button>
       <button id="settings-save"   class="settings-footer-btn settings-footer-btn--save">Save Changes</button>
     </div>
-
   </div>
 
   <script src="../shared/config.js"></script>

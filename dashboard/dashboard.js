@@ -103,9 +103,11 @@ let _authMode = 'signin';
 let _listenersSetup = false;
 let _lockListenersSetup = false;
 
-let currentFilter = 'today';
+let currentTab = 'dashboard';       // 'dashboard' | 'customers' | 'tasks'
+let currentTaskFilter = 'all';      // sub-filter within Tasks tab: 'all' | 'pending' | 'overdue' | 'completed'
 let currentSort = 'remindAt-asc';
 let searchQuery = '';
+let customerSearchQuery = '';
 let cachedAllTasks = [];
 let currentView = 'table'; // 'cards' | 'table'
 let currentOwnerFilter = 'all'; // 'all' | owner id
@@ -312,9 +314,12 @@ async function handleLogin(e) {
 // ===== App init (runs only when authenticated) =====
 
 async function initApp() {
+  await initTheme();
   await loadSettings();     // MUST be first — populates OWNERS and STAGES
   await renderAll();
-  setupNav();
+  setupTabs();
+  setupTaskSubFilters();
+  setupCustomerSearch();
   setupSearch();
   setupSort();
   setupTimeline();
@@ -574,10 +579,253 @@ async function handleAuthModalLogin(e) {
 
 async function renderAll() {
   cachedAllTasks = await cloudStore.getTasks();
+  showTab(currentTab);
+}
 
-  updateCounts(cachedAllTasks);
-  updateStats(cachedAllTasks);
-  renderTasks(cachedAllTasks);
+// ===== Theme system =====
+async function initTheme() {
+  try {
+    const data = await chrome.storage.sync.get('theme');
+    const theme = data.theme || 'dark';
+    document.documentElement.setAttribute('data-theme', theme);
+    updateThemeIcon(theme);
+  } catch (_) {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  }
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme') || 'dark';
+  const next = current === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  updateThemeIcon(next);
+  chrome.storage.sync.set({ theme: next });
+}
+
+function updateThemeIcon(theme) {
+  const icon = document.getElementById('theme-icon');
+  if (icon) icon.textContent = theme === 'dark' ? '☀️' : '🌙';
+}
+
+// ===== Tab system =====
+function setupTabs() {
+  const tabBtns = document.querySelectorAll('.nav-btn[data-tab]');
+  tabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      tabBtns.forEach(b => b.classList.remove('nav-btn--active'));
+      btn.classList.add('nav-btn--active');
+      currentTab = btn.dataset.tab;
+      showTab(currentTab);
+    });
+  });
+
+  const themeBtn = document.getElementById('theme-toggle');
+  if (themeBtn) themeBtn.addEventListener('click', toggleTheme);
+}
+
+function showTab(tab) {
+  document.querySelectorAll('.tab-panel').forEach(p => {
+    p.hidden = true;
+    p.classList.remove('tab-panel--active');
+  });
+  const panel = document.getElementById(`tab-${tab}`);
+  if (panel) {
+    panel.hidden = false;
+    panel.classList.add('tab-panel--active');
+  }
+  if (tab === 'dashboard') renderDashboardTab(cachedAllTasks);
+  else if (tab === 'customers') renderCustomersTab(cachedAllTasks);
+  else if (tab === 'tasks') renderTasks(cachedAllTasks);
+}
+
+// ===== Dashboard overview tab =====
+function renderDashboardTab(allTasks) {
+  const now = Date.now();
+  const td  = todayRange();
+  const wk  = thisWeekRange();
+
+  const todayTasks   = allTasks.filter(t => !t.completed && t.remindAt >= td.start && t.remindAt <= td.end);
+  const overdueTasks = allTasks.filter(t => !t.completed && t.remindAt < now);
+  const weekTasks    = allTasks.filter(t => !t.completed && t.remindAt >= wk.start && t.remindAt <= wk.end);
+  const uniqueContacts = new Set(allTasks.map(t => (t.contactName || '').toLowerCase()).filter(Boolean));
+
+  const el = (id) => document.getElementById(id);
+  el('dash-stat-today').textContent = todayTasks.length;
+  el('dash-stat-overdue').textContent = overdueTasks.length;
+  el('dash-stat-week').textContent = weekTasks.length;
+  el('dash-stat-customers').textContent = uniqueContacts.size;
+
+  el('dash-subtitle').textContent = new Date().toLocaleDateString(undefined, {
+    weekday: 'long', month: 'long', day: 'numeric'
+  });
+
+  // Today's agenda
+  const todayList = el('dash-today-list');
+  todayList.innerHTML = '';
+  const todayEmpty = el('dash-today-empty');
+  if (todayTasks.length === 0) {
+    todayEmpty.hidden = false;
+    todayList.hidden = true;
+  } else {
+    todayEmpty.hidden = true;
+    todayList.hidden = false;
+    todayTasks.forEach(task => todayList.appendChild(buildCard(task, allTasks)));
+  }
+
+  // Overdue section
+  const overdueList = el('dash-overdue-list');
+  overdueList.innerHTML = '';
+  const overdueSection = el('dash-overdue-section');
+  if (overdueTasks.length === 0) {
+    overdueSection.hidden = true;
+  } else {
+    overdueSection.hidden = false;
+    overdueTasks.slice(0, 6).forEach(task => overdueList.appendChild(buildCard(task, allTasks)));
+  }
+}
+
+// ===== Customers tab =====
+function renderCustomersTab(allTasks) {
+  const contactMap = new Map();
+
+  allTasks.forEach(task => {
+    const key = (task.contactName || 'Unknown').toLowerCase();
+    if (!contactMap.has(key)) {
+      const displayName = (task.firstName || task.lastName)
+        ? `${task.firstName || ''} ${task.lastName || ''}`.trim()
+        : (task.contactName || 'Unknown');
+      contactMap.set(key, {
+        displayName,
+        contactName: task.contactName || 'Unknown',
+        profileUrl: task.profileUrl || '',
+        platform: task.platform || '',
+        tasks: [],
+        lastInteraction: 0,
+        currentStage: null,
+      });
+    }
+    const entry = contactMap.get(key);
+    entry.tasks.push(task);
+    if (task.profileUrl && !entry.profileUrl) entry.profileUrl = task.profileUrl;
+    if (task.createdAt > entry.lastInteraction) {
+      entry.lastInteraction = task.createdAt;
+      entry.currentStage = task.stage;
+    }
+  });
+
+  let customers = [...contactMap.values()];
+
+  if (customerSearchQuery) {
+    const q = customerSearchQuery.toLowerCase();
+    customers = customers.filter(c => c.displayName.toLowerCase().includes(q));
+  }
+
+  customers.sort((a, b) => b.lastInteraction - a.lastInteraction);
+
+  const grid = document.getElementById('customer-grid');
+  grid.innerHTML = '';
+  const emptyEl = document.getElementById('customer-empty');
+
+  document.getElementById('customers-subtitle').textContent = `${customers.length} contact${customers.length !== 1 ? 's' : ''}`;
+
+  if (customers.length === 0) {
+    emptyEl.hidden = false;
+    grid.hidden = true;
+    return;
+  }
+  emptyEl.hidden = true;
+  grid.hidden = false;
+
+  customers.forEach(customer => {
+    grid.appendChild(buildCustomerCard(customer, allTasks));
+  });
+}
+
+function buildCustomerCard(customer, allTasks) {
+  const card = document.createElement('div');
+  card.className = 'customer-card';
+  card.setAttribute('role', 'listitem');
+  card.addEventListener('click', () => openTimeline(customer.contactName, allTasks));
+
+  const parts = customer.displayName.split(' ');
+  const initials = ((parts[0] || '?')[0] + (parts[1] || '')[0]).toUpperCase();
+  const pendingCount = customer.tasks.filter(t => !t.completed).length;
+  const stage = customer.currentStage ? getStage(customer.currentStage) : null;
+
+  // Avatar
+  const header = document.createElement('div');
+  header.className = 'customer-card__header';
+
+  const avatar = document.createElement('div');
+  avatar.className = 'customer-card__avatar';
+  avatar.textContent = initials;
+
+  const info = document.createElement('div');
+  info.className = 'customer-card__info';
+  const nameEl = document.createElement('p');
+  nameEl.className = 'customer-card__name';
+  nameEl.textContent = customer.displayName;
+  const metaEl = document.createElement('p');
+  metaEl.className = 'customer-card__meta';
+  metaEl.textContent = formatRelativeDate(customer.lastInteraction);
+  info.append(nameEl, metaEl);
+
+  header.append(avatar, info);
+  card.appendChild(header);
+
+  // Stats row
+  const stats = document.createElement('div');
+  stats.className = 'customer-card__stats';
+  const totalSpan = document.createElement('span');
+  totalSpan.textContent = `${customer.tasks.length} task${customer.tasks.length !== 1 ? 's' : ''}`;
+  const pendingSpan = document.createElement('span');
+  pendingSpan.textContent = `${pendingCount} pending`;
+  stats.append(totalSpan, pendingSpan);
+
+  if (customer.profileUrl) {
+    const profLink = document.createElement('a');
+    profLink.href = customer.profileUrl;
+    profLink.target = '_blank';
+    profLink.rel = 'noopener noreferrer';
+    profLink.textContent = '👤 Profile';
+    profLink.addEventListener('click', (e) => e.stopPropagation());
+    stats.appendChild(profLink);
+  }
+
+  card.appendChild(stats);
+
+  // Stage badge
+  if (stage) {
+    const badge = document.createElement('span');
+    badge.className = 'stage-badge';
+    badge.style.setProperty('--stage-bg', stage.bg);
+    badge.style.setProperty('--stage-color', stage.color);
+    badge.textContent = stage.label;
+    badge.style.alignSelf = 'flex-start';
+    card.appendChild(badge);
+  }
+
+  return card;
+}
+
+function setupTaskSubFilters() {
+  document.querySelectorAll('.sub-filter-pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.sub-filter-pill').forEach(b => b.classList.remove('sub-filter-pill--active'));
+      btn.classList.add('sub-filter-pill--active');
+      currentTaskFilter = btn.dataset.filter;
+      renderTasks(cachedAllTasks);
+    });
+  });
+}
+
+function setupCustomerSearch() {
+  const el = document.getElementById('customer-search');
+  if (!el) return;
+  el.addEventListener('input', (e) => {
+    customerSearchQuery = e.target.value.trim();
+    renderCustomersTab(cachedAllTasks);
+  });
 }
 
 // Returns start-of-today and end-of-today timestamps
@@ -597,41 +845,13 @@ function thisWeekRange() {
   return { start: start.getTime(), end: end.getTime() };
 }
 
-function updateCounts(allTasks) {
-  const now  = Date.now();
-  const td   = todayRange();
-  const wk   = thisWeekRange();
-  document.getElementById('count-today').textContent    = allTasks.filter(t => !t.completed && t.remindAt >= td.start && t.remindAt <= td.end).length;
-  document.getElementById('count-thisweek').textContent = allTasks.filter(t => !t.completed && t.remindAt >= wk.start && t.remindAt <= wk.end).length;
-  document.getElementById('count-all').textContent      = allTasks.length;
-  document.getElementById('count-pending').textContent  = allTasks.filter(t => !t.completed && t.remindAt >= now).length;
-  document.getElementById('count-overdue').textContent  = allTasks.filter(t => !t.completed && t.remindAt < now).length;
-  document.getElementById('count-completed').textContent = allTasks.filter(t => t.completed).length;
-}
-
-function updateStats(allTasks) {
-  const now = Date.now();
-  const td  = todayRange();
-  const wk  = thisWeekRange();
-  document.getElementById('stat-today').textContent   = allTasks.filter(t => !t.completed && t.remindAt >= td.start && t.remindAt <= td.end).length;
-  document.getElementById('stat-week').textContent    = allTasks.filter(t => !t.completed && t.remindAt >= wk.start && t.remindAt <= wk.end).length;
-  document.getElementById('stat-pending').textContent = allTasks.filter(t => !t.completed && t.remindAt >= now).length;
-  document.getElementById('stat-overdue').textContent = allTasks.filter(t => !t.completed && t.remindAt < now).length;
-  document.getElementById('stat-done').textContent    = allTasks.filter(t => t.completed).length;
-}
-
 function renderTasks(allTasks) {
   const now = Date.now();
 
-  const td = todayRange();
-  const wk = thisWeekRange();
-
   let tasks = allTasks.filter(task => {
-    if (currentFilter === 'today')    return !task.completed && task.remindAt >= td.start && task.remindAt <= td.end;
-    if (currentFilter === 'thisweek') return !task.completed && task.remindAt >= wk.start && task.remindAt <= wk.end;
-    if (currentFilter === 'pending')  return !task.completed && task.remindAt >= now;
-    if (currentFilter === 'overdue')  return !task.completed && task.remindAt < now;
-    if (currentFilter === 'completed') return task.completed;
+    if (currentTaskFilter === 'pending')  return !task.completed && task.remindAt >= now;
+    if (currentTaskFilter === 'overdue')  return !task.completed && task.remindAt < now;
+    if (currentTaskFilter === 'completed') return task.completed;
     return true; // 'all'
   });
 
@@ -643,7 +863,7 @@ function renderTasks(allTasks) {
   if (searchQuery) {
     const q = searchQuery.toLowerCase();
     tasks = tasks.filter(t =>
-      t.contactName.toLowerCase().includes(q) ||
+      (t.contactName || '').toLowerCase().includes(q) ||
       (t.description && t.description.toLowerCase().includes(q))
     );
   }
@@ -651,7 +871,7 @@ function renderTasks(allTasks) {
   const [sortKey, sortDir] = currentSort.split('-');
   tasks.sort((a, b) => {
     if (sortKey === 'name') {
-      const cmp = a.contactName.toLowerCase().localeCompare(b.contactName.toLowerCase());
+      const cmp = (a.contactName || '').toLowerCase().localeCompare((b.contactName || '').toLowerCase());
       return sortDir === 'asc' ? cmp : -cmp;
     }
     const valA = a[sortKey] || 0;
@@ -684,20 +904,17 @@ function renderTasks(allTasks) {
     }
   }
 
-  const titles = { today: 'Today', thisweek: 'This Week', all: 'All Tasks', pending: 'Pending', overdue: 'Overdue', completed: 'Completed' };
-  document.getElementById('page-title').textContent = titles[currentFilter];
-  document.getElementById('page-subtitle').textContent = `${tasks.length} task${tasks.length !== 1 ? 's' : ''}`;
+  const titles = { all: 'All Tasks', pending: 'Pending', overdue: 'Overdue', completed: 'Completed' };
+  const titleEl = document.getElementById('tasks-page-title');
+  const subtitleEl = document.getElementById('tasks-page-subtitle');
+  if (titleEl) titleEl.textContent = titles[currentTaskFilter] || 'All Tasks';
+  if (subtitleEl) subtitleEl.textContent = `${tasks.length} task${tasks.length !== 1 ? 's' : ''}`;
 }
 
 // ===== Table view =====
 
-// Columns shown depend on the current filter:
-// today / thisweek → compact (no Status, no Follow-up)
-// all / pending / overdue / completed → full
-const COMPACT_FILTERS = new Set(['today', 'thisweek']);
-
 function renderTable(tasks, allTasks) {
-  const compact = COMPACT_FILTERS.has(currentFilter);
+  const compact = false; // always show full columns
   const tbody = document.getElementById('task-table-body');
   tbody.innerHTML = '';
   const now = Date.now();
@@ -1206,28 +1423,17 @@ async function handleDelete(taskId) {
 
 // ===== Nav, search, sort =====
 
-function setupNav() {
-  document.querySelectorAll('.nav-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('nav-btn--active'));
-      btn.classList.add('nav-btn--active');
-      currentFilter = btn.dataset.filter;
-      renderAll();
-    });
-  });
-}
-
 function setupSearch() {
   document.getElementById('search-input').addEventListener('input', (e) => {
     searchQuery = e.target.value.trim();
-    renderAll();
+    renderTasks(cachedAllTasks);
   });
 }
 
 function setupSort() {
   document.getElementById('sort-select').addEventListener('change', (e) => {
     currentSort = e.target.value;
-    renderAll();
+    renderTasks(cachedAllTasks);
   });
 }
 
@@ -1240,7 +1446,7 @@ function setupOwnerFilter() {
   const allPill = document.createElement('button');
   allPill.className = 'owner-filter-pill' + (currentOwnerFilter === 'all' ? ' owner-filter-pill--active' : '');
   allPill.textContent = 'All';
-  allPill.addEventListener('click', () => { currentOwnerFilter = 'all'; setupOwnerFilter(); renderAll(); });
+  allPill.addEventListener('click', () => { currentOwnerFilter = 'all'; setupOwnerFilter(); renderTasks(cachedAllTasks); });
   container.appendChild(allPill);
 
   OWNERS.forEach(owner => {
@@ -1249,7 +1455,7 @@ function setupOwnerFilter() {
     pill.textContent = owner.label;
     pill.style.setProperty('--owner-color', owner.color);
     pill.style.setProperty('--owner-bg', owner.bg);
-    pill.addEventListener('click', () => { currentOwnerFilter = owner.id; setupOwnerFilter(); renderAll(); });
+    pill.addEventListener('click', () => { currentOwnerFilter = owner.id; setupOwnerFilter(); renderTasks(cachedAllTasks); });
     container.appendChild(pill);
   });
 }

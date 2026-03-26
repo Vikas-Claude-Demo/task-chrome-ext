@@ -39,6 +39,170 @@
   --font: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
+/* ===== Light theme overrides ===== */
+[data-theme="light"] {
+  --text-primary:   #1a1a2e;
+  --text-secondary: rgba(0,0,0,0.55);
+  --text-tertiary:  rgba(0,0,0,0.35);
+  --border:         rgba(0,0,0,0.08);
+  --border-strong:  rgba(0,0,0,0.15);
+  --surface:        #f5f5f0;
+  --white:          #ffffff;
+
+  --coral:       #7ab300;
+  --coral-dark:  #5c8a00;
+  --coral-light: rgba(122,179,0,0.1);
+  --indigo:      #7ab300;
+  --indigo-light: rgba(122,179,0,0.1);
+  --green:       #2da44e;
+  --green-light: #edfbf2;
+  --amber:       #c57d00;
+  --amber-light: #fff8e8;
+  --red:         #d32f2f;
+  --red-light:   #fef3f2;
+}
+
+/* ===== Tab panel visibility ===== */
+.tab-panel { display: none; }
+.tab-panel--active { display: block; }
+
+/* ===== Dashboard sections ===== */
+.dash-section {
+  padding: 0 28px 20px;
+}
+.dash-section__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 14px;
+  font-family: var(--font);
+}
+.dash-section__title--alert {
+  color: var(--red);
+}
+
+/* ===== Customer grid ===== */
+.customer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  padding: 20px 28px;
+}
+
+.customer-card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  cursor: pointer;
+  transition: box-shadow 0.15s, border-color 0.15s;
+  font-family: var(--font);
+}
+.customer-card:hover {
+  box-shadow: 0 2px 16px rgba(0,0,0,0.1);
+  border-color: var(--border-strong);
+}
+.customer-card__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.customer-card__avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--coral-light);
+  color: var(--coral);
+  font-size: 15px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-family: var(--font);
+}
+.customer-card__info {
+  flex: 1;
+  min-width: 0;
+}
+.customer-card__name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.customer-card__meta {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+.customer-card__stats {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-family: var(--font);
+}
+.customer-card__stats a {
+  color: var(--coral);
+  text-decoration: none;
+}
+.customer-card__stats a:hover {
+  text-decoration: underline;
+}
+
+/* ===== Task sub-filter pills ===== */
+.task-sub-filters {
+  display: flex;
+  gap: 4px;
+}
+.sub-filter-pill {
+  padding: 5px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--border-strong);
+  background: var(--white);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-family: var(--font);
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.sub-filter-pill:hover {
+  border-color: var(--coral);
+  color: var(--coral);
+}
+.sub-filter-pill--active {
+  background: var(--coral-light);
+  color: var(--coral-dark);
+  border-color: var(--coral-dark);
+  font-weight: 600;
+}
+
+/* ===== Theme toggle button ===== */
+.sidebar__theme-toggle {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  cursor: pointer;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+  margin-bottom: 8px;
+}
+.sidebar__theme-toggle:hover {
+  background: var(--border-strong);
+}
+
 html, body {
   height: 100%;
   font-family: var(--font);
