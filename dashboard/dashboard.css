@@ -98,12 +98,17 @@
   flex-direction: column;
   gap: 10px;
   cursor: pointer;
-  transition: box-shadow 0.15s, border-color 0.15s;
+  transition: box-shadow 0.2s, border-color 0.2s, transform 0.2s;
   font-family: var(--font);
 }
 .customer-card:hover {
-  box-shadow: 0 2px 16px rgba(0,0,0,0.1);
-  border-color: var(--border-strong);
+  box-shadow: 0 4px 20px rgba(200,255,0,0.05), 0 2px 12px rgba(0,0,0,0.15);
+  border-color: rgba(200,255,0,0.12);
+  transform: translateY(-2px);
+}
+[data-theme="light"] .customer-card:hover {
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+  border-color: rgba(0,0,0,0.12);
 }
 .customer-card__header {
   display: flex;
@@ -136,8 +141,17 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.customer-card__title {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+  margin-top: 1px;
+}
 .customer-card__meta {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-secondary);
   margin-top: 2px;
 }
@@ -547,13 +561,18 @@ body { display: flex; min-height: 100vh; }
   display: flex;
   flex-direction: column;
   gap: 8px;
-  transition: box-shadow 0.15s, border-color 0.15s;
+  transition: box-shadow 0.2s, border-color 0.2s, transform 0.2s;
   font-family: var(--font);
   cursor: pointer;
 }
 .dash-card:hover {
-  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-  border-color: var(--border-strong);
+  box-shadow: 0 4px 24px rgba(200,255,0,0.06), 0 2px 12px rgba(0,0,0,0.2);
+  border-color: rgba(200,255,0,0.15);
+  transform: translateY(-2px);
+}
+[data-theme="light"] .dash-card:hover {
+  box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+  border-color: rgba(0,0,0,0.15);
 }
 .dash-card--overdue { border-left-color: #FF4CB4; }
 .dash-card--pending { border-left-color: #c8ff00; }
@@ -1261,7 +1280,8 @@ body { display: flex; min-height: 100vh; }
   transition: background 0.1s;
 }
 .task-table tbody tr:last-child { border-bottom: none; }
-.task-table tbody tr:hover { background: #fafbfc; }
+.task-table tbody tr:hover { background: rgba(200,255,0,0.04); }
+[data-theme="light"] .task-table tbody tr:hover { background: #f5f5f0; }
 .task-table tbody tr.tr--overdue { background: rgba(255,76,180,0.04); }
 .task-table tbody tr.tr--done    { opacity: 0.55; }
 
@@ -1661,6 +1681,8 @@ body { display: flex; min-height: 100vh; }
 .settings-footer-btn--save { background: var(--coral); color: var(--white); }
 .settings-footer-btn--save:hover { background: var(--coral-dark); }
 .settings-footer-btn--save:disabled { opacity: 0.6; cursor: default; }
+.settings-footer-btn--signout { background: transparent; color: var(--red); border: 1px solid var(--red); }
+.settings-footer-btn--signout:hover { background: var(--red-light); }
 
 /* ===================================================
    Auth Gate — fullscreen (dashboard)

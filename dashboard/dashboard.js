@@ -108,6 +108,7 @@ let currentTaskFilter = 'all';      // sub-filter within Tasks tab: 'all' | 'pen
 let currentSort = 'remindAt-asc';
 let searchQuery = '';
 let customerSearchQuery = '';
+let customerView = 'cards';          // 'cards' | 'table'
 let cachedAllTasks = [];
 let currentView = 'table'; // 'cards' | 'table'
 let currentOwnerFilter = 'all'; // 'all' | owner id
@@ -320,6 +321,7 @@ async function initApp() {
   setupTabs();
   setupTaskSubFilters();
   setupCustomerSearch();
+  setupCustomerViewToggle();
   setupSearch();
   setupSort();
   setupTimeline();
@@ -834,6 +836,7 @@ function renderCustomersTab(allTasks) {
       contactMap.set(key, {
         displayName,
         contactName: task.contactName || 'Unknown',
+        title: task.title || '',
         profileUrl: task.profileUrl || '',
         platform: task.platform || '',
         tasks: [],
@@ -844,6 +847,7 @@ function renderCustomersTab(allTasks) {
     const entry = contactMap.get(key);
     entry.tasks.push(task);
     if (task.profileUrl && !entry.profileUrl) entry.profileUrl = task.profileUrl;
+    if (task.title && !entry.title) entry.title = task.title;
     if (task.createdAt > entry.lastInteraction) {
       entry.lastInteraction = task.createdAt;
       entry.currentStage = task.stage;
@@ -860,7 +864,9 @@ function renderCustomersTab(allTasks) {
   customers.sort((a, b) => b.lastInteraction - a.lastInteraction);
 
   const grid = document.getElementById('customer-grid');
+  const tableWrap = document.getElementById('customer-table-wrap');
   grid.innerHTML = '';
+  if (tableWrap) document.getElementById('customer-table-body').innerHTML = '';
   const emptyEl = document.getElementById('customer-empty');
 
   const subtitleEl = document.getElementById('page-subtitle');
@@ -869,13 +875,119 @@ function renderCustomersTab(allTasks) {
   if (customers.length === 0) {
     emptyEl.hidden = false;
     grid.hidden = true;
+    if (tableWrap) tableWrap.hidden = true;
     return;
   }
   emptyEl.hidden = true;
-  grid.hidden = false;
+
+  if (customerView === 'table' && tableWrap) {
+    grid.hidden = true;
+    tableWrap.hidden = false;
+    renderCustomerTable(customers, allTasks);
+  } else {
+    grid.hidden = false;
+    if (tableWrap) tableWrap.hidden = true;
+    customers.forEach(customer => {
+      grid.appendChild(buildCustomerCard(customer, allTasks));
+    });
+  }
+}
+
+function renderCustomerTable(customers, allTasks) {
+  const thead = document.querySelector('#customer-table thead tr');
+  const tbody = document.getElementById('customer-table-body');
+  thead.innerHTML = '';
+  tbody.innerHTML = '';
+
+  ['Name', 'Title', 'Tasks', 'Pending', 'Stage', 'Last Activity', 'Profile', 'Actions'].forEach(h => {
+    const th = document.createElement('th');
+    th.textContent = h;
+    thead.appendChild(th);
+  });
 
   customers.forEach(customer => {
-    grid.appendChild(buildCustomerCard(customer, allTasks));
+    const tr = document.createElement('tr');
+    const pendingCount = customer.tasks.filter(t => !t.completed).length;
+    const stage = customer.currentStage ? getStage(customer.currentStage) : null;
+    const parts = customer.displayName.split(' ');
+    const initials = ((parts[0] || '?')[0] + (parts[1] || '')[0]).toUpperCase();
+    const colorIdx = Math.abs([...customer.displayName].reduce((a, c) => a + c.charCodeAt(0), 0)) % AVATAR_COLORS.length;
+
+    // Name
+    const tdName = document.createElement('td');
+    tdName.className = 'td-contact';
+    const avatar = document.createElement('span');
+    avatar.className = 'tbl-avatar';
+    avatar.textContent = initials;
+    avatar.style.background = AVATAR_COLORS[colorIdx];
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'tbl-name';
+    nameSpan.textContent = customer.displayName;
+    nameSpan.style.cursor = 'pointer';
+    nameSpan.addEventListener('click', () => openTimeline(customer.contactName, allTasks));
+    tdName.append(avatar, nameSpan);
+
+    // Title
+    const tdTitle = document.createElement('td');
+    tdTitle.textContent = customer.title || '—';
+    tdTitle.style.maxWidth = '200px';
+    tdTitle.style.overflow = 'hidden';
+    tdTitle.style.textOverflow = 'ellipsis';
+    tdTitle.style.whiteSpace = 'nowrap';
+    tdTitle.title = customer.title || '';
+
+    // Tasks count
+    const tdTasks = document.createElement('td');
+    tdTasks.textContent = customer.tasks.length;
+
+    // Pending
+    const tdPending = document.createElement('td');
+    tdPending.textContent = pendingCount;
+    if (pendingCount > 0) tdPending.style.color = 'var(--amber)';
+
+    // Stage
+    const tdStage = document.createElement('td');
+    if (stage) {
+      const badge = document.createElement('span');
+      badge.className = 'stage-badge';
+      badge.style.setProperty('--stage-bg', stage.bg);
+      badge.style.setProperty('--stage-color', stage.color);
+      badge.textContent = stage.label;
+      tdStage.appendChild(badge);
+    } else {
+      tdStage.textContent = '—';
+    }
+
+    // Last activity
+    const tdActivity = document.createElement('td');
+    tdActivity.textContent = formatRelativeDate(customer.lastInteraction);
+
+    // Profile
+    const tdProfile = document.createElement('td');
+    if (customer.profileUrl) {
+      const link = document.createElement('a');
+      link.href = customer.profileUrl;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = '👤';
+      link.title = 'View profile';
+      link.style.textDecoration = 'none';
+      tdProfile.appendChild(link);
+    } else {
+      tdProfile.textContent = '—';
+    }
+
+    // Actions
+    const tdActions = document.createElement('td');
+    const tlBtn = document.createElement('button');
+    tlBtn.className = 'tbl-btn';
+    tlBtn.textContent = '📅';
+    tlBtn.title = 'View timeline';
+    tlBtn.addEventListener('click', () => openTimeline(customer.contactName, allTasks));
+    tdActions.appendChild(tlBtn);
+
+    tr.append(tdName, tdTitle, tdTasks, tdPending, tdStage, tdActivity, tdProfile, tdActions);
+    tbody.appendChild(tr);
   });
 }
 
@@ -906,7 +1018,14 @@ function buildCustomerCard(customer, allTasks) {
   const metaEl = document.createElement('p');
   metaEl.className = 'customer-card__meta';
   metaEl.textContent = formatRelativeDate(customer.lastInteraction);
-  info.append(nameEl, metaEl);
+  info.append(nameEl);
+  if (customer.title) {
+    const titleEl = document.createElement('p');
+    titleEl.className = 'customer-card__title';
+    titleEl.textContent = customer.title;
+    info.appendChild(titleEl);
+  }
+  info.appendChild(metaEl);
 
   header.append(avatar, info);
   card.appendChild(header);
@@ -962,6 +1081,24 @@ function setupCustomerSearch() {
   if (!el) return;
   el.addEventListener('input', (e) => {
     customerSearchQuery = e.target.value.trim();
+    renderCustomersTab(cachedAllTasks);
+  });
+}
+
+function setupCustomerViewToggle() {
+  const cardsBtn = document.getElementById('cust-view-cards');
+  const tableBtn = document.getElementById('cust-view-table');
+  if (!cardsBtn || !tableBtn) return;
+  cardsBtn.addEventListener('click', () => {
+    customerView = 'cards';
+    cardsBtn.classList.add('view-btn--active');
+    tableBtn.classList.remove('view-btn--active');
+    renderCustomersTab(cachedAllTasks);
+  });
+  tableBtn.addEventListener('click', () => {
+    customerView = 'table';
+    tableBtn.classList.add('view-btn--active');
+    cardsBtn.classList.remove('view-btn--active');
     renderCustomersTab(cachedAllTasks);
   });
 }
