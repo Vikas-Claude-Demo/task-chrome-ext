@@ -1,36 +1,288 @@
 /* content.css — Asana-inspired modal + floating button */
 
 /* ===================================================
-   Floating Button
+   Floating Widget (FAB)
 =================================================== */
-#lts-float-btn {
+#lts-widget {
   position: fixed !important;
   bottom: 80px !important;
   right: 24px !important;
   z-index: 99998 !important;
   display: flex !important;
   align-items: center !important;
-  gap: 7px !important;
-  padding: 10px 18px !important;
+  justify-content: center !important;
+  width: 48px !important;
+  height: 48px !important;
   background: #f06a6a !important;
   color: #ffffff !important;
   border: none !important;
-  border-radius: 20px !important;
-  font-size: 13.5px !important;
-  font-weight: 600 !important;
+  border-radius: 50% !important;
+  font-size: 22px !important;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+  cursor: grab !important;
+  box-shadow: 0 3px 14px rgba(240,106,106,0.4) !important;
+  transition: box-shadow 0.15s, transform 0.1s !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  line-height: 1 !important;
+}
+#lts-widget:hover {
+  box-shadow: 0 5px 20px rgba(240,106,106,0.5) !important;
+  transform: scale(1.06) !important;
+}
+#lts-widget:active { cursor: grabbing !important; }
+#lts-widget.lts-widget--dragging {
+  cursor: grabbing !important;
+  transition: none !important;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.3) !important;
+  transform: scale(1.08) !important;
+}
+
+/* ===================================================
+   Floating Popup Panel (in-page replica of popup.html)
+=================================================== */
+#lts-widget-popup {
+  position: fixed !important;
+  z-index: 99998 !important;
+  display: none !important;
+  flex-direction: column !important;
+  background: #f9fafb !important;
+  border-radius: 14px !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.22), 0 0 0 1px rgba(0,0,0,0.06) !important;
+  overflow: hidden !important;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+  -webkit-font-smoothing: antialiased !important;
+  width: 340px !important;
+  max-height: 520px !important;
+  animation: lts-popup-in 0.15s ease-out !important;
+  color: #1e1f21 !important;
+  font-size: 13.5px !important;
+}
+#lts-widget-popup.lts-popup--open {
+  display: flex !important;
+}
+@keyframes lts-popup-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.95); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* --- Panel header (draggable, matches popup red header) --- */
+.lts-panel-header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 10px 14px !important;
+  background: #f06a6a !important;
+  cursor: grab !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  flex-shrink: 0 !important;
+}
+.lts-panel-header:active,
+.lts-panel-header.lts-panel--dragging {
+  cursor: grabbing !important;
+}
+.lts-panel-title {
+  margin: 0 !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  color: #ffffff !important;
+  letter-spacing: -0.2px !important;
+}
+.lts-panel-header-right {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+.lts-panel-badge {
+  background: rgba(0,0,0,0.2) !important;
+  color: #fff !important;
+  border-radius: 20px !important;
+  min-width: 20px !important;
+  height: 20px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  padding: 0 6px !important;
+}
+.lts-panel-badge[hidden] { display: none !important; }
+.lts-panel-expand,
+.lts-panel-close {
+  background: rgba(255,255,255,0.15) !important;
+  border: none !important;
+  color: #fff !important;
+  font-size: 15px !important;
+  width: 26px !important;
+  height: 26px !important;
+  border-radius: 6px !important;
   cursor: pointer !important;
-  box-shadow: 0 2px 12px rgba(240,106,106,0.35) !important;
-  transition: background 0.15s, box-shadow 0.15s, transform 0.1s !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: background 0.12s !important;
+}
+.lts-panel-expand:hover,
+.lts-panel-close:hover {
+  background: rgba(255,255,255,0.28) !important;
+}
+
+/* --- Action buttons row --- */
+.lts-panel-actions {
+  display: flex !important;
+  gap: 6px !important;
+  padding: 8px 10px !important;
+  background: #fff !important;
+  border-bottom: 1px solid #e8eaed !important;
+  flex-shrink: 0 !important;
+}
+.lts-panel-action-btn {
+  flex: 1 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  padding: 8px 10px !important;
+  border: 1px solid #e8eaed !important;
+  border-radius: 8px !important;
+  background: #fff !important;
+  color: #1e1f21 !important;
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
+  font-family: inherit !important;
+  cursor: pointer !important;
+  transition: background 0.1s, border-color 0.1s !important;
   white-space: nowrap !important;
-  letter-spacing: -0.1px !important;
 }
-#lts-float-btn:hover {
-  background: #d95f5f !important;
-  transform: translateY(-1px) !important;
-  box-shadow: 0 4px 16px rgba(240,106,106,0.4) !important;
+.lts-panel-action-btn:hover {
+  background: #f5f6f8 !important;
+  border-color: #d4d7db !important;
 }
-#lts-float-btn:active { transform: translateY(0) !important; }
+
+/* --- Filter tabs --- */
+.lts-panel-tabs {
+  display: flex !important;
+  background: #fff !important;
+  border-bottom: 1px solid #e8eaed !important;
+  flex-shrink: 0 !important;
+}
+.lts-panel-tab {
+  flex: 1 !important;
+  padding: 8px 4px !important;
+  border: none !important;
+  background: transparent !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  color: #6f7782 !important;
+  cursor: pointer !important;
+  border-bottom: 2px solid transparent !important;
+  font-family: inherit !important;
+  transition: color 0.12s, background 0.12s !important;
+  white-space: nowrap !important;
+}
+.lts-panel-tab:hover { color: #f06a6a !important; background: #fef3f2 !important; }
+.lts-panel-tab--active {
+  color: #d95f5f !important;
+  border-bottom-color: #f06a6a !important;
+  font-weight: 700 !important;
+}
+
+/* --- Task list --- */
+.lts-panel-tasks {
+  flex: 1 !important;
+  overflow-y: auto !important;
+  padding: 8px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 7px !important;
+}
+.lts-panel-empty {
+  text-align: center !important;
+  color: #9ba4b0 !important;
+  font-size: 12.5px !important;
+  line-height: 1.65 !important;
+  padding: 24px 16px !important;
+}
+.lts-panel-empty strong { color: #f06a6a !important; font-weight: 600 !important; }
+
+/* --- Task card --- */
+.lts-ptask {
+  background: #fff !important;
+  border: 1px solid #e8eaed !important;
+  border-radius: 10px !important;
+  border-top: 3px solid #4573d2 !important;
+  padding: 10px 12px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 5px !important;
+  transition: box-shadow 0.15s !important;
+}
+.lts-ptask:hover { box-shadow: 0 2px 10px rgba(0,0,0,0.07) !important; }
+.lts-ptask--done { opacity: 0.55 !important; border-top-color: #d4d7db !important; }
+
+.lts-ptask__top {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 6px !important;
+}
+.lts-ptask__name {
+  font-weight: 600 !important;
+  font-size: 13px !important;
+  color: #1e1f21 !important;
+  flex: 1 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+.lts-ptask__status {
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  padding: 2px 7px !important;
+  border-radius: 20px !important;
+  flex-shrink: 0 !important;
+}
+.lts-ptask__status--pending  { background: #fff8e8 !important; color: #c57d00 !important; }
+.lts-ptask__status--done     { background: #edfbf2 !important; color: #2da44e !important; }
+.lts-ptask__status--overdue  { background: #fef3f2 !important; color: #d95f5f !important; }
+
+.lts-ptask__followup {
+  font-size: 11px !important;
+  color: #6f7782 !important;
+}
+.lts-ptask__thread {
+  font-size: 11.5px !important;
+  font-weight: 500 !important;
+  color: #4573d2 !important;
+  text-decoration: none !important;
+  padding: 3px 8px !important;
+  background: #eef2fc !important;
+  border-radius: 5px !important;
+  display: inline-block !important;
+  transition: background 0.12s !important;
+}
+.lts-ptask__thread:hover { background: #dce5f8 !important; }
+
+.lts-ptask__actions {
+  display: flex !important;
+  gap: 5px !important;
+  justify-content: flex-end !important;
+  margin-top: 2px !important;
+}
+.lts-ptask-btn {
+  padding: 3px 10px !important;
+  border-radius: 20px !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  font-family: inherit !important;
+  transition: background 0.12s !important;
+}
+.lts-ptask-btn--done { background: #edfbf2 !important; color: #2da44e !important; border: 1px solid #b8e8c8 !important; }
+.lts-ptask-btn--done:hover { background: #c4edcf !important; }
+.lts-ptask-btn--del  { background: transparent !important; color: #9ba4b0 !important; border: 1px solid #e8eaed !important; }
+.lts-ptask-btn--del:hover { background: #fef3f2 !important; color: #d95f5f !important; border-color: #f5c6c6 !important; }
 
 /* ===================================================
    Overlay
@@ -311,4 +563,126 @@
 #lts-toast.lts-toast--visible {
   opacity: 1 !important;
   transform: translateY(0) !important;
+}
+
+/* (Grab Chat button is now a popup menu item — no standalone styles needed) */
+
+/* ===================================================
+   Grab Chat Overlay + Modal
+=================================================== */
+.lts-grab-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  background: rgba(0,0,0,0.5) !important;
+  z-index: 99999 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 16px !important;
+  backdrop-filter: blur(2px) !important;
+}
+
+.lts-grab-modal {
+  background: #ffffff !important;
+  border-radius: 12px !important;
+  width: 100% !important;
+  max-width: 560px !important;
+  max-height: 80vh !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2), 0 0 0 1px rgba(0,0,0,0.05) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+  color: #1e1f21 !important;
+  overflow: hidden !important;
+  -webkit-font-smoothing: antialiased !important;
+}
+
+.lts-grab-header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 14px 18px !important;
+  background: #1b1f23 !important;
+  flex-shrink: 0 !important;
+}
+
+.lts-grab-title {
+  margin: 0 !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  color: #ffffff !important;
+  letter-spacing: -0.2px !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  max-width: 300px !important;
+}
+
+.lts-grab-copy-btn {
+  background: rgba(255,255,255,0.15) !important;
+  border: none !important;
+  color: #ffffff !important;
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
+  font-family: inherit !important;
+  cursor: pointer !important;
+  padding: 5px 12px !important;
+  border-radius: 14px !important;
+  white-space: nowrap !important;
+  transition: background 0.12s !important;
+}
+.lts-grab-copy-btn:hover {
+  background: rgba(255,255,255,0.25) !important;
+}
+
+.lts-grab-count {
+  padding: 8px 18px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: #6f7782 !important;
+  background: #f7f8fa !important;
+  border-bottom: 1px solid #eef0f2 !important;
+  flex-shrink: 0 !important;
+}
+
+.lts-grab-body {
+  overflow-y: auto !important;
+  padding: 12px 18px !important;
+  flex: 1 !important;
+}
+
+.lts-grab-msg {
+  padding: 8px 0 !important;
+  border-bottom: 1px solid #f0f2f5 !important;
+}
+.lts-grab-msg:last-child {
+  border-bottom: none !important;
+}
+
+.lts-grab-msg-meta {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  margin-bottom: 3px !important;
+}
+
+.lts-grab-msg-sender {
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  color: #1e1f21 !important;
+}
+
+.lts-grab-msg-time {
+  font-size: 11px !important;
+  color: #9ba4b0 !important;
+  font-weight: 400 !important;
+}
+
+.lts-grab-msg-body {
+  margin: 0 !important;
+  font-size: 13.5px !important;
+  line-height: 1.5 !important;
+  color: #3d4450 !important;
+  white-space: pre-wrap !important;
+  word-break: break-word !important;
 }

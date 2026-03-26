@@ -39,6 +39,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     updateBadge().then(() => sendResponse({ success: true }));
     return true;
   }
+
+  if (message.action === 'OPEN_DASHBOARD') {
+    chrome.tabs.create({ url: chrome.runtime.getURL('dashboard/dashboard.html') });
+    sendResponse({ success: true });
+    return true;
+  }
 });
 
 // ===== Recalculate badge from storage =====

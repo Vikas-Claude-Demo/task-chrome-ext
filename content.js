@@ -262,67 +262,612 @@ function getOutlookThreadUrl() {
   return location.href;
 }
 
-// ===== Create the floating button once =====
-function createFloatingButton() {
-  if (document.getElementById('lts-float-btn')) return;
+// ===== Panel state =====
+let _panelFilter = 'today';
+
+// ===== Create the floating widget (FAB + full popup panel) =====
+function createWidget() {
+  if (document.getElementById('lts-widget')) return;
 
   const platform = detectPlatform();
   if (!platform) return;
   const cfg = PLATFORM_CONFIG[platform];
 
-  const btn = document.createElement('button');
-  btn.id = 'lts-float-btn';
-  btn.textContent = cfg.label;
-  btn.title = `${cfg.label} (Nudge)`;
+  // --- FAB (small circular button) ---
+  const fab = document.createElement('button');
+  fab.id = 'lts-widget';
+  fab.textContent = '📌';
+  fab.title = 'Nudge — click to open, drag to move';
+  fab.style.setProperty('background', cfg.color, 'important');
 
-  // Override CSS color vars with platform color
-  btn.style.setProperty('background', cfg.color, 'important');
+  // --- Floating Panel (full popup replica) ---
+  const panel = document.createElement('div');
+  panel.id = 'lts-widget-popup';
 
-  btn.addEventListener('mouseenter', () => {
-    btn.style.setProperty('background', cfg.hover, 'important');
+  // Header (draggable, red like popup)
+  const header = document.createElement('div');
+  header.className = 'lts-panel-header';
+  header.innerHTML = '<span class="lts-panel-title">Nudge</span>';
+
+  const headerRight = document.createElement('div');
+  headerRight.className = 'lts-panel-header-right';
+
+  const badge = document.createElement('span');
+  badge.className = 'lts-panel-badge';
+  badge.id = 'lts-panel-badge';
+  badge.textContent = '0';
+  badge.hidden = true;
+
+  const expandBtn = document.createElement('button');
+  expandBtn.className = 'lts-panel-expand';
+  expandBtn.textContent = '⤢';
+  expandBtn.title = 'Open full dashboard';
+  expandBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    chrome.runtime.sendMessage({ action: 'OPEN_DASHBOARD' });
   });
-  btn.addEventListener('mouseleave', () => {
-    btn.style.setProperty('background', cfg.color, 'important');
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'lts-panel-close';
+  closeBtn.textContent = '✕';
+  closeBtn.title = 'Close';
+  closeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeWidgetPopup();
   });
 
-  btn.addEventListener('click', (e) => {
-    e.preventDefault();
+  headerRight.append(badge, expandBtn, closeBtn);
+  header.appendChild(headerRight);
+  panel.appendChild(header);
+
+  // Action buttons row
+  const actionsRow = document.createElement('div');
+  actionsRow.className = 'lts-panel-actions';
+
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'lts-panel-action-btn';
+  saveBtn.innerHTML = '📋 Save as Task';
+  saveBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     const contactName = extractContactName(platform);
-
-    // For Gmail/Outlook: warn if no email is open
     if ((platform === 'gmail' || platform === 'outlook') && contactName === 'Open an email first') {
       showNoThreadToast(platform);
       return;
     }
-
-    // Use a deep-link thread URL (not raw location.href which may lack thread ID in split-pane)
     const threadUrl = getThreadUrl(platform);
     openModal(contactName, threadUrl, platform).catch((err) => {
-      if (isExtensionContextInvalidated(err)) {
-        showExtensionReloadToast();
-        return;
-      }
+      if (isExtensionContextInvalidated(err)) { showExtensionReloadToast(); return; }
       console.error('[TSP] openModal error:', err);
       showExtensionReloadToast('Could not open task modal. Refresh this tab and try again.');
     });
   });
+  actionsRow.appendChild(saveBtn);
 
-  document.body.appendChild(btn);
+  if (platform === 'linkedin') {
+    const grabBtn = document.createElement('button');
+    grabBtn.className = 'lts-panel-action-btn';
+    grabBtn.innerHTML = '💬 Grab Chat';
+    grabBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const contactName = extractLinkedInName();
+      const messages = extractLinkedInChat();
+      if (!messages || messages.length === 0) {
+        showGrabChatToast('⚠️ No messages found. Open a conversation first.', '#b45309');
+        return;
+      }
+
+      // 1. Copy chat to clipboard
+      const chatText = formatChatAsText(contactName, messages);
+      try { await navigator.clipboard.writeText(chatText); } catch (_) {}
+
+      // 2. Open Claude in a new tab with the conversation for reply help
+      const claudePrompt = `/linkedin-reply ${chatText}`;
+      const claudeUrl = `https://claude.ai/new?q=${encodeURIComponent(claudePrompt)}`;
+      window.open(claudeUrl, '_blank');
+
+      // 3. Check if a task already exists for this contact
+      let existingTasks = [];
+      try { existingTasks = await cloudStore.getTasks(); } catch (_) {}
+
+      const matchingTask = existingTasks
+        .filter(t => t.contactName === contactName && t.platform === 'linkedin' && !t.completed)
+        .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
+
+      if (matchingTask) {
+        // Attach chat to existing task's description
+        const separator = matchingTask.description ? '\n\n───── Chat grabbed ' + new Date().toLocaleString() + ' ─────\n\n' : '';
+        matchingTask.description = (matchingTask.description || '') + separator + chatText;
+        const updatedTasks = existingTasks.map(t => t.id === matchingTask.id ? matchingTask : t);
+        try {
+          await cloudStore.setTasks(updatedTasks);
+          showGrabChatToast('✅ Chat copied & attached to existing task!', '#2da44e');
+          renderPanelTasks();
+        } catch (_) {
+          showGrabChatToast('⚠️ Chat copied but failed to attach to task.', '#b45309');
+        }
+      } else {
+        // No existing task — open Save as Task modal with chat pre-filled
+        showGrabChatToast('📋 Chat copied! Now save your task.', '#0a66c2');
+        const threadUrl = getThreadUrl(platform);
+        openModal(contactName, threadUrl, platform, chatText).catch((err) => {
+          if (isExtensionContextInvalidated(err)) { showExtensionReloadToast(); return; }
+          console.error('[TSP] openModal error:', err);
+        });
+      }
+    });
+    actionsRow.appendChild(grabBtn);
+  }
+  panel.appendChild(actionsRow);
+
+  // Filter tabs
+  const tabs = document.createElement('div');
+  tabs.className = 'lts-panel-tabs';
+  ['today', 'pending', 'completed'].forEach(f => {
+    const tab = document.createElement('button');
+    tab.className = 'lts-panel-tab' + (f === 'today' ? ' lts-panel-tab--active' : '');
+    tab.dataset.filter = f;
+    tab.textContent = f === 'today' ? '☀️ Today' : f.charAt(0).toUpperCase() + f.slice(1);
+    tab.addEventListener('click', () => {
+      tabs.querySelectorAll('.lts-panel-tab').forEach(t => t.classList.remove('lts-panel-tab--active'));
+      tab.classList.add('lts-panel-tab--active');
+      _panelFilter = f;
+      renderPanelTasks();
+    });
+    tabs.appendChild(tab);
+  });
+  panel.appendChild(tabs);
+
+  // Task list container
+  const taskList = document.createElement('div');
+  taskList.className = 'lts-panel-tasks';
+  taskList.id = 'lts-panel-tasks';
+  panel.appendChild(taskList);
+
+  document.body.appendChild(fab);
+  document.body.appendChild(panel);
+
+  // --- FAB: draggable + click ---
+  let fabDragging = false, fabWasDragged = false;
+  let fabDragStartX, fabDragStartY, fabStartLeft, fabStartTop;
+
+  chrome.storage.local.get('nudgeWidgetPos', (data) => {
+    if (data.nudgeWidgetPos) {
+      fab.style.setProperty('bottom', `${data.nudgeWidgetPos.bottom}px`, 'important');
+      fab.style.setProperty('right', `${data.nudgeWidgetPos.right}px`, 'important');
+    }
+  });
+
+  fab.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    fabDragging = true; fabWasDragged = false;
+    fabDragStartX = e.clientX; fabDragStartY = e.clientY;
+    const r = fab.getBoundingClientRect();
+    fabStartLeft = r.left; fabStartTop = r.top;
+    fab.classList.add('lts-widget--dragging');
+  });
+
+  // --- Panel header: draggable ---
+  let panelDragging = false;
+  let panelDragStartX, panelDragStartY, panelStartLeft, panelStartTop;
+
+  chrome.storage.local.get('nudgePanelPos', (data) => {
+    if (data.nudgePanelPos) {
+      panel.style.setProperty('bottom', `${data.nudgePanelPos.bottom}px`, 'important');
+      panel.style.setProperty('right', `${data.nudgePanelPos.right}px`, 'important');
+    }
+  });
+
+  header.addEventListener('mousedown', (e) => {
+    if (e.target.closest('.lts-panel-expand, .lts-panel-close, .lts-panel-badge')) return;
+    e.preventDefault();
+    panelDragging = true;
+    panelDragStartX = e.clientX; panelDragStartY = e.clientY;
+    const r = panel.getBoundingClientRect();
+    panelStartLeft = r.left; panelStartTop = r.top;
+    header.classList.add('lts-panel--dragging');
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (fabDragging) {
+      const dx = e.clientX - fabDragStartX, dy = e.clientY - fabDragStartY;
+      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) fabWasDragged = true;
+      fab.style.setProperty('right', `${Math.max(0, window.innerWidth - (fabStartLeft + dx) - fab.offsetWidth)}px`, 'important');
+      fab.style.setProperty('bottom', `${Math.max(0, window.innerHeight - (fabStartTop + dy) - fab.offsetHeight)}px`, 'important');
+    }
+    if (panelDragging) {
+      const dx = e.clientX - panelDragStartX, dy = e.clientY - panelDragStartY;
+      panel.style.setProperty('right', `${Math.max(0, window.innerWidth - (panelStartLeft + dx) - panel.offsetWidth)}px`, 'important');
+      panel.style.setProperty('bottom', `${Math.max(0, window.innerHeight - (panelStartTop + dy) - panel.offsetHeight)}px`, 'important');
+    }
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (fabDragging) {
+      fabDragging = false; fab.classList.remove('lts-widget--dragging');
+      if (fabWasDragged) chrome.storage.local.set({ nudgeWidgetPos: { right: parseInt(fab.style.right) || 24, bottom: parseInt(fab.style.bottom) || 80 } });
+    }
+    if (panelDragging) {
+      panelDragging = false; header.classList.remove('lts-panel--dragging');
+      chrome.storage.local.set({ nudgePanelPos: { right: parseInt(panel.style.right) || 24, bottom: parseInt(panel.style.bottom) || 140 } });
+    }
+  });
+
+  fab.addEventListener('click', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    if (fabWasDragged) { fabWasDragged = false; return; }
+    toggleWidgetPopup();
+  });
+
+  // Listen for task changes to re-render
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && (changes.tasks || changes.settings)) renderPanelTasks();
+  });
 }
 
-// ===== Show/hide button based on page =====
-function updateButtonVisibility() {
-  const btn = document.getElementById('lts-float-btn');
-  if (!btn) return;
-  const show = shouldShowButton();
-  btn.style.display = show ? 'flex' : 'none';
+// ===== Render tasks inside panel =====
+async function renderPanelTasks() {
+  const container = document.getElementById('lts-panel-tasks');
+  const badge = document.getElementById('lts-panel-badge');
+  if (!container) return;
 
-  // Also update button color in case platform changed (unlikely but safe)
+  let allTasks = [];
+  try { allTasks = await cloudStore.getTasks(); } catch { return; }
+
+  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999);
+
+  const filtered = allTasks.filter(t => {
+    if (_panelFilter === 'today')     return !t.completed && t.remindAt >= todayStart.getTime() && t.remindAt <= todayEnd.getTime();
+    if (_panelFilter === 'pending')   return !t.completed;
+    if (_panelFilter === 'completed') return t.completed;
+    return true;
+  });
+  filtered.sort((a, b) => {
+    if (a.completed !== b.completed) return a.completed ? 1 : -1;
+    return a.remindAt - b.remindAt;
+  });
+
+  // Badge count (today's tasks)
+  const todayCount = allTasks.filter(t => !t.completed && t.remindAt >= todayStart.getTime() && t.remindAt <= todayEnd.getTime()).length;
+  if (badge) {
+    badge.textContent = todayCount > 99 ? '99+' : String(todayCount);
+    badge.hidden = todayCount === 0;
+  }
+
+  container.innerHTML = '';
+  if (filtered.length === 0) {
+    container.innerHTML = '<p class="lts-panel-empty">No tasks yet.<br>Open a conversation and click <strong>"Save as Task"</strong> to get started.</p>';
+    return;
+  }
+
+  filtered.forEach(task => {
+    const card = document.createElement('div');
+    card.className = 'lts-ptask' + (task.completed ? ' lts-ptask--done' : '');
+
+    const top = document.createElement('div');
+    top.className = 'lts-ptask__top';
+    const name = document.createElement('span');
+    name.className = 'lts-ptask__name';
+    name.textContent = task.contactName;
+
+    const overdue = !task.completed && task.remindAt < Date.now();
+    const status = document.createElement('span');
+    status.className = 'lts-ptask__status lts-ptask__status--' + (task.completed ? 'done' : overdue ? 'overdue' : 'pending');
+    status.textContent = task.completed ? 'Done' : overdue ? 'Overdue' : 'Pending';
+    top.append(name, status);
+    card.appendChild(top);
+
+    if (task.threadUrl) {
+      const link = document.createElement('a');
+      link.className = 'lts-ptask__thread';
+      link.href = task.threadUrl;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = '💬 Open thread';
+      card.appendChild(link);
+    }
+
+    const followup = document.createElement('p');
+    followup.className = 'lts-ptask__followup';
+    const days = task.followupDays ? `${task.followupDays}-day follow-up` : 'Follow-up';
+    followup.textContent = `${days} · ${new Date(task.remindAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+    card.appendChild(followup);
+
+    const actions = document.createElement('div');
+    actions.className = 'lts-ptask__actions';
+    if (!task.completed) {
+      const doneBtn = document.createElement('button');
+      doneBtn.className = 'lts-ptask-btn lts-ptask-btn--done';
+      doneBtn.textContent = '✓ Done';
+      doneBtn.addEventListener('click', async () => {
+        const tasks = (await cloudStore.getTasks()).map(t => t.id === task.id ? { ...t, completed: true } : t);
+        await cloudStore.setTasks(tasks);
+        chrome.runtime.sendMessage({ action: 'DELETE_ALARM', alarmName: task.id });
+        renderPanelTasks();
+      });
+      actions.appendChild(doneBtn);
+    }
+    const delBtn = document.createElement('button');
+    delBtn.className = 'lts-ptask-btn lts-ptask-btn--del';
+    delBtn.textContent = 'Delete';
+    delBtn.addEventListener('click', async () => {
+      const tasks = (await cloudStore.getTasks()).filter(t => t.id !== task.id);
+      await cloudStore.setTasks(tasks);
+      chrome.runtime.sendMessage({ action: 'DELETE_ALARM', alarmName: task.id });
+      renderPanelTasks();
+    });
+    actions.appendChild(delBtn);
+    card.appendChild(actions);
+
+    container.appendChild(card);
+  });
+}
+
+function toggleWidgetPopup() {
+  const panel = document.getElementById('lts-widget-popup');
+  if (!panel) return;
+  if (panel.classList.contains('lts-popup--open')) {
+    closeWidgetPopup();
+  } else {
+    positionPopup();
+    panel.classList.add('lts-popup--open');
+    renderPanelTasks();
+  }
+}
+
+function closeWidgetPopup() {
+  const panel = document.getElementById('lts-widget-popup');
+  if (panel) panel.classList.remove('lts-popup--open');
+}
+
+function positionPopup() {
+  const fab = document.getElementById('lts-widget');
+  const panel = document.getElementById('lts-widget-popup');
+  if (!fab || !panel) return;
+  chrome.storage.local.get('nudgePanelPos', (data) => {
+    if (data.nudgePanelPos) {
+      panel.style.setProperty('right', `${data.nudgePanelPos.right}px`, 'important');
+      panel.style.setProperty('bottom', `${data.nudgePanelPos.bottom}px`, 'important');
+    } else {
+      const rect = fab.getBoundingClientRect();
+      panel.style.setProperty('right', `${window.innerWidth - rect.right}px`, 'important');
+      panel.style.setProperty('bottom', `${window.innerHeight - rect.top + 8}px`, 'important');
+    }
+  });
+}
+
+// ===== Extract LinkedIn conversation messages =====
+function extractLinkedInChat() {
+  const messages = [];
+
+  // LinkedIn messaging DOM selectors for message items
+  const msgSelectors = [
+    '.msg-s-event-listitem',
+    '.msg-s-message-list__event',
+    '[class*="msg-s-event-listitem"]',
+  ];
+
+  let msgElements = [];
+  for (const sel of msgSelectors) {
+    msgElements = document.querySelectorAll(sel);
+    if (msgElements.length > 0) break;
+  }
+
+  // If no structured messages found, try a broader approach
+  if (msgElements.length === 0) {
+    // Try the message list container and get all message-like blocks
+    const container = document.querySelector('.msg-s-message-list-content, [class*="msg-s-message-list"]');
+    if (container) {
+      msgElements = container.querySelectorAll('li, [role="listitem"]');
+    }
+  }
+
+  for (const msgEl of msgElements) {
+    // Extract sender name
+    let sender = '';
+    const senderSelectors = [
+      '.msg-s-message-group__name',
+      '.msg-s-message-group__profile-link',
+      '[class*="msg-s-message-group__name"]',
+      '.msg-s-event-listitem__link span',
+      'span.t-14.t-bold',
+    ];
+    for (const sel of senderSelectors) {
+      const el = msgEl.querySelector(sel);
+      if (el && el.textContent.trim()) {
+        sender = el.textContent.trim();
+        break;
+      }
+    }
+
+    // Extract timestamp
+    let time = '';
+    const timeSelectors = [
+      '.msg-s-message-group__timestamp',
+      'time',
+      '[class*="timestamp"]',
+      '.msg-s-message-list__time-heading',
+    ];
+    for (const sel of timeSelectors) {
+      const el = msgEl.querySelector(sel);
+      if (el) {
+        time = (el.getAttribute('datetime') || el.textContent || '').trim();
+        break;
+      }
+    }
+
+    // Extract message body text
+    let body = '';
+    const bodySelectors = [
+      '.msg-s-event-listitem__body',
+      '.msg-s-event__content',
+      '[class*="msg-s-event-listitem__message-bubble"]',
+      '.msg-s-message-group__content p',
+      'p.msg-s-event-listitem__body',
+    ];
+    for (const sel of bodySelectors) {
+      const el = msgEl.querySelector(sel);
+      if (el && el.textContent.trim()) {
+        body = el.textContent.trim();
+        break;
+      }
+    }
+
+    // Only add if we got meaningful content
+    if (body) {
+      messages.push({ sender, time, body });
+    }
+  }
+
+  return messages;
+}
+
+// ===== Grab Chat modal =====
+function openGrabChatModal(contactName, messages) {
+  // Remove any existing modal
+  const existing = document.getElementById('lts-grab-chat-overlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'lts-grab-chat-overlay';
+  overlay.className = 'lts-grab-overlay';
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+
+  const modal = document.createElement('div');
+  modal.className = 'lts-grab-modal';
+  modal.addEventListener('click', (e) => e.stopPropagation());
+
+  // Header
+  const header = document.createElement('div');
+  header.className = 'lts-grab-header';
+
+  const title = document.createElement('h2');
+  title.className = 'lts-grab-title';
+  title.textContent = `Chat with ${contactName}`;
+
+  const headerRight = document.createElement('div');
+  headerRight.style.cssText = 'display:flex;gap:8px;align-items:center;';
+
+  const copyBtn = document.createElement('button');
+  copyBtn.className = 'lts-grab-copy-btn';
+  copyBtn.textContent = '📋 Copy All';
+  copyBtn.addEventListener('click', () => {
+    const text = formatChatAsText(contactName, messages);
+    navigator.clipboard.writeText(text).then(() => {
+      copyBtn.textContent = '✓ Copied!';
+      setTimeout(() => { copyBtn.textContent = '📋 Copy All'; }, 2000);
+    });
+  });
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'lts-close-btn';
+  closeBtn.textContent = '✕';
+  closeBtn.addEventListener('click', () => overlay.remove());
+
+  headerRight.append(copyBtn, closeBtn);
+  header.append(title, headerRight);
+
+  // Message count
+  const countBadge = document.createElement('div');
+  countBadge.className = 'lts-grab-count';
+  countBadge.textContent = `${messages.length} message${messages.length !== 1 ? 's' : ''} captured`;
+
+  // Chat body
+  const chatBody = document.createElement('div');
+  chatBody.className = 'lts-grab-body';
+
+  for (const msg of messages) {
+    const msgDiv = document.createElement('div');
+    msgDiv.className = 'lts-grab-msg';
+
+    if (msg.sender || msg.time) {
+      const meta = document.createElement('div');
+      meta.className = 'lts-grab-msg-meta';
+      if (msg.sender) {
+        const senderSpan = document.createElement('span');
+        senderSpan.className = 'lts-grab-msg-sender';
+        senderSpan.textContent = msg.sender;
+        meta.appendChild(senderSpan);
+      }
+      if (msg.time) {
+        const timeSpan = document.createElement('span');
+        timeSpan.className = 'lts-grab-msg-time';
+        timeSpan.textContent = msg.time;
+        meta.appendChild(timeSpan);
+      }
+      msgDiv.appendChild(meta);
+    }
+
+    const bodyP = document.createElement('p');
+    bodyP.className = 'lts-grab-msg-body';
+    bodyP.textContent = msg.body;
+    msgDiv.appendChild(bodyP);
+
+    chatBody.appendChild(msgDiv);
+  }
+
+  modal.append(header, countBadge, chatBody);
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  // Esc to close
+  const escHandler = (e) => {
+    if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', escHandler); }
+  };
+  document.addEventListener('keydown', escHandler);
+}
+
+// Format chat as plain text for clipboard
+function formatChatAsText(contactName, messages) {
+  let text = `LinkedIn Chat with ${contactName}\n`;
+  text += `Captured: ${new Date().toLocaleString()}\n`;
+  text += '─'.repeat(40) + '\n\n';
+
+  for (const msg of messages) {
+    if (msg.sender) text += `${msg.sender}`;
+    if (msg.time) text += ` (${msg.time})`;
+    if (msg.sender || msg.time) text += ':\n';
+    text += `${msg.body}\n\n`;
+  }
+
+  return text.trim();
+}
+
+// Toast for grab chat
+function showGrabChatToast(message, color) {
+  const existing = document.getElementById('lts-toast');
+  if (existing) existing.remove();
+
+  const toast = document.createElement('div');
+  toast.id = 'lts-toast';
+  toast.textContent = message;
+  toast.style.setProperty('background', color || '#0a66c2', 'important');
+  document.body.appendChild(toast);
+
+  setTimeout(() => toast.classList.add('lts-toast--visible'), 10);
+  setTimeout(() => {
+    toast.classList.remove('lts-toast--visible');
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
+
+// ===== Show/hide widget based on page =====
+function updateButtonVisibility() {
+  const fab = document.getElementById('lts-widget');
+  if (!fab) return;
+  const show = shouldShowButton();
+  fab.style.display = show ? 'flex' : 'none';
+
+  // Update FAB color to match platform
   if (show) {
     const cfg = PLATFORM_CONFIG[detectPlatform()];
-    if (cfg) btn.style.setProperty('background', cfg.color, 'important');
+    if (cfg) fab.style.setProperty('background', cfg.color, 'important');
   }
+
+  // Hide popup when widget hides
+  if (!show) closeWidgetPopup();
 }
 
 // ===== Poll for URL changes (all platforms are SPAs) =====
@@ -337,7 +882,7 @@ setInterval(() => {
 // ===== Init =====
 (async () => {
   await cloudStore.init();
-  createFloatingButton();
+  createWidget();
   updateButtonVisibility();
 })();
 
@@ -673,7 +1218,7 @@ function daysFromNow(days) {
 // ===== Modal =====
 // ===================================================================
 
-async function openModal(contactName, threadUrl, platform) {
+async function openModal(contactName, threadUrl, platform, prefillDescription) {
   removeModal();
 
   // Refresh STAGES from storage so any settings changes are picked up immediately
@@ -855,7 +1400,11 @@ async function openModal(contactName, threadUrl, platform) {
   descInput.className = 'lts-input lts-textarea';
   descInput.placeholder = 'e.g. Discussed partnership, follow up on proposal…';
   descInput.rows = 3;
-  descInput.maxLength = 500;
+  descInput.maxLength = 5000;
+  if (prefillDescription) {
+    descInput.value = prefillDescription;
+    descInput.rows = 5;
+  }
 
   descRow.append(descLabel, descInput);
 
