@@ -624,18 +624,52 @@ function setupTabs() {
 }
 
 function showTab(tab) {
+  // Map sidebar tabs to panel IDs
+  const taskListTabs = new Set(['today', 'thisweek', 'pending', 'overdue', 'completed']);
+  const panelTab = taskListTabs.has(tab) ? 'tasks' : tab;
+
   document.querySelectorAll('.tab-panel').forEach(p => {
     p.hidden = true;
     p.classList.remove('tab-panel--active');
   });
-  const panel = document.getElementById(`tab-${tab}`);
+  const panel = document.getElementById(`tab-${panelTab}`);
   if (panel) {
     panel.hidden = false;
     panel.classList.add('tab-panel--active');
   }
-  if (tab === 'dashboard') renderDashboardTab(cachedAllTasks);
-  else if (tab === 'customers') renderCustomersTab(cachedAllTasks);
-  else if (tab === 'tasks') renderTasks(cachedAllTasks);
+
+  // Update sidebar counts always
+  updateSidebarCounts(cachedAllTasks);
+
+  // Update header title
+  const titles = { dashboard: 'Dashboard', customers: 'Customers', today: 'Today', thisweek: 'This Week', pending: 'Pending', overdue: 'Overdue', completed: 'Completed' };
+  const titleEl = document.getElementById('page-title');
+  if (titleEl) titleEl.textContent = titles[tab] || 'Tasks';
+
+  const dateStr = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+  const subtitleEl = document.getElementById('page-subtitle');
+
+  if (tab === 'dashboard') {
+    if (subtitleEl) subtitleEl.textContent = `${dateStr} — ${cachedAllTasks.length} tasks across ${new Set(cachedAllTasks.map(t => (t.contactName || '').toLowerCase()).filter(Boolean)).size} customers`;
+    renderDashboardTab(cachedAllTasks);
+  } else if (tab === 'customers') {
+    renderCustomersTab(cachedAllTasks);
+  } else if (taskListTabs.has(tab)) {
+    currentTaskFilter = tab === 'today' ? 'today' : tab === 'thisweek' ? 'thisweek' : tab;
+    renderTasks(cachedAllTasks);
+  }
+}
+
+function updateSidebarCounts(allTasks) {
+  const now = Date.now();
+  const td  = todayRange();
+  const wk  = thisWeekRange();
+  const el = (id, val) => { const e = document.getElementById(id); if (e) e.textContent = val; };
+  el('count-today', allTasks.filter(t => !t.completed && t.remindAt >= td.start && t.remindAt <= td.end).length);
+  el('count-thisweek', allTasks.filter(t => !t.completed && t.remindAt >= wk.start && t.remindAt <= wk.end).length);
+  el('count-pending', allTasks.filter(t => !t.completed && t.remindAt >= now).length);
+  el('count-overdue', allTasks.filter(t => !t.completed && t.remindAt < now).length);
+  el('count-completed', allTasks.filter(t => t.completed).length);
 }
 
 // ===== Dashboard overview tab =====
@@ -646,20 +680,50 @@ function renderDashboardTab(allTasks) {
 
   const todayTasks   = allTasks.filter(t => !t.completed && t.remindAt >= td.start && t.remindAt <= td.end);
   const overdueTasks = allTasks.filter(t => !t.completed && t.remindAt < now);
-  const weekTasks    = allTasks.filter(t => !t.completed && t.remindAt >= wk.start && t.remindAt <= wk.end);
+  const pendingTasks = allTasks.filter(t => !t.completed && t.remindAt >= now);
+  const weekTasks    = allTasks.filter(t => !t.completed && t.remindAt > td.end && t.remindAt <= wk.end);
+  const completedTasks = allTasks.filter(t => t.completed);
   const uniqueContacts = new Set(allTasks.map(t => (t.contactName || '').toLowerCase()).filter(Boolean));
 
   const el = (id) => document.getElementById(id);
-  el('dash-stat-today').textContent = todayTasks.length;
+
+  // Stats
+  el('dash-stat-total').textContent = allTasks.length;
+  el('dash-stat-pending').textContent = pendingTasks.length;
   el('dash-stat-overdue').textContent = overdueTasks.length;
-  el('dash-stat-week').textContent = weekTasks.length;
-  el('dash-stat-customers').textContent = uniqueContacts.size;
+  el('dash-stat-done').textContent = completedTasks.length;
+  el('dash-stat-followups').textContent = todayTasks.length + weekTasks.length;
 
-  el('dash-subtitle').textContent = new Date().toLocaleDateString(undefined, {
-    weekday: 'long', month: 'long', day: 'numeric'
-  });
+  // Sub-stats
+  const totalSub = el('dash-stat-total-sub');
+  if (totalSub) totalSub.textContent = uniqueContacts.size > 0 ? `${uniqueContacts.size} customers` : '';
+  const pendingSub = el('dash-stat-pending-sub');
+  if (pendingSub) pendingSub.textContent = todayTasks.length > 0 ? `↑ ${todayTasks.length} new today` : '';
+  const overdueSub = el('dash-stat-overdue-sub');
+  if (overdueSub) overdueSub.textContent = overdueTasks.length > 0 ? 'needs attention' : '';
+  const doneSub = el('dash-stat-done-sub');
+  if (doneSub) doneSub.textContent = completedTasks.length > 0 ? `↑ ${completedTasks.length} this week` : '';
+  const followSub = el('dash-stat-followups-sub');
+  if (followSub) followSub.textContent = todayTasks.length > 0 ? `● ${todayTasks.length} due today` : '';
 
-  // Today's agenda
+  // Today date
+  const todayDate = el('dash-today-date');
+  if (todayDate) todayDate.textContent = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+
+  // Overdue section
+  const overdueList = el('dash-overdue-list');
+  overdueList.innerHTML = '';
+  const overdueSection = el('dash-overdue-section');
+  const overdueCount = el('dash-overdue-count');
+  if (overdueCount) overdueCount.textContent = overdueTasks.length;
+  if (overdueTasks.length === 0) {
+    overdueSection.hidden = true;
+  } else {
+    overdueSection.hidden = false;
+    overdueTasks.slice(0, 4).forEach(task => overdueList.appendChild(buildDashCard(task)));
+  }
+
+  // Today section
   const todayList = el('dash-today-list');
   todayList.innerHTML = '';
   const todayEmpty = el('dash-today-empty');
@@ -669,19 +733,92 @@ function renderDashboardTab(allTasks) {
   } else {
     todayEmpty.hidden = true;
     todayList.hidden = false;
-    todayTasks.forEach(task => todayList.appendChild(buildCard(task, allTasks)));
+    todayTasks.slice(0, 4).forEach(task => todayList.appendChild(buildDashCard(task)));
   }
 
-  // Overdue section
-  const overdueList = el('dash-overdue-list');
-  overdueList.innerHTML = '';
-  const overdueSection = el('dash-overdue-section');
-  if (overdueTasks.length === 0) {
-    overdueSection.hidden = true;
+  // Week section
+  const weekList = el('dash-week-list');
+  weekList.innerHTML = '';
+  const weekSection = el('dash-week-section');
+  if (weekTasks.length === 0) {
+    weekSection.hidden = true;
   } else {
-    overdueSection.hidden = false;
-    overdueTasks.slice(0, 6).forEach(task => overdueList.appendChild(buildCard(task, allTasks)));
+    weekSection.hidden = false;
+    weekTasks.slice(0, 4).forEach(task => weekList.appendChild(buildDashCard(task)));
   }
+
+  // Wire "View all" buttons
+  document.querySelectorAll('.dash-section__viewall').forEach(btn => {
+    btn.onclick = () => {
+      const goto = btn.dataset.goto;
+      if (goto) {
+        document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('nav-btn--active'));
+        const target = document.querySelector(`.nav-btn[data-tab="${goto}"]`);
+        if (target) target.classList.add('nav-btn--active');
+        currentTab = goto;
+        showTab(goto);
+      }
+    };
+  });
+}
+
+// ===== Build dashboard-style task card (matches mockup) =====
+const AVATAR_COLORS = ['#6c63ff', '#FF4CB4', '#f59e0b', '#2ecc71', '#3b82f6', '#e74c3c', '#9b59b6', '#1abc9c'];
+
+function buildDashCard(task) {
+  const card = document.createElement('div');
+  const overdue = !task.completed && task.remindAt < Date.now();
+  const statusClass = task.completed ? 'done' : overdue ? 'overdue' : 'pending';
+  card.className = `dash-card dash-card--${statusClass}`;
+  card.setAttribute('role', 'listitem');
+
+  const displayName = (task.firstName || task.lastName) ? `${task.firstName || ''} ${task.lastName || ''}`.trim() : (task.contactName || 'Unknown');
+  const parts = displayName.split(' ');
+  const initials = ((parts[0] || '?')[0] + (parts[1] || '')[0]).toUpperCase();
+  const colorIdx = Math.abs([...displayName].reduce((a, c) => a + c.charCodeAt(0), 0)) % AVATAR_COLORS.length;
+
+  // Determine priority based on followupDays
+  const priority = task.followupDays <= 2 ? 'high' : task.followupDays <= 7 ? 'medium' : 'low';
+  const priorityLabel = priority.toUpperCase();
+
+  // Platform labels
+  const platformLabels = { linkedin: 'LinkedIn', gmail: 'Email', outlook: 'Email', whatsapp: 'WhatsApp' };
+  const platformIcons = { linkedin: '💬', gmail: '📧', outlook: '📧', whatsapp: '💬', call: '📞', slack: '💬' };
+
+  const stage = task.stage ? getStage(task.stage) : null;
+
+  card.innerHTML = `
+    <div class="dash-card__top">
+      <div class="dash-card__contact">
+        <div class="dash-card__avatar" style="background:${AVATAR_COLORS[colorIdx]}">${initials}</div>
+        <div class="dash-card__name-block">
+          <span class="dash-card__name">${escapeHtml(displayName)}</span>
+          <span class="dash-card__company">${stage ? escapeHtml(stage.label) : ''}</span>
+        </div>
+      </div>
+      <span class="dash-card__priority dash-card__priority--${priority}">${priorityLabel}</span>
+    </div>
+    <div class="dash-card__body">
+      <span class="dash-card__task-title">${escapeHtml(task.description ? task.description.split('\n')[0].slice(0, 60) : (task.followupDays ? task.followupDays + '-day follow-up' : 'Follow up'))}</span>
+      ${task.description && task.description.length > 60 ? `<span class="dash-card__desc">${escapeHtml(task.description.slice(0, 100))}</span>` : ''}
+    </div>
+    <div class="dash-card__footer">
+      <span class="dash-card__footer-item"><span class="dash-card__status-dot dash-card__status-dot--${statusClass}"></span> ${statusClass}</span>
+      <span class="dash-card__footer-item">📅 ${new Date(task.remindAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+      <span class="dash-card__footer-item">${platformIcons[task.platform] || '📋'} ${platformLabels[task.platform] || task.platform || ''}</span>
+    </div>
+  `;
+
+  // Click to open timeline
+  card.addEventListener('click', () => openTimeline(task.contactName, cachedAllTasks));
+
+  return card;
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str || '';
+  return div.innerHTML;
 }
 
 // ===== Customers tab =====
@@ -726,7 +863,8 @@ function renderCustomersTab(allTasks) {
   grid.innerHTML = '';
   const emptyEl = document.getElementById('customer-empty');
 
-  document.getElementById('customers-subtitle').textContent = `${customers.length} contact${customers.length !== 1 ? 's' : ''}`;
+  const subtitleEl = document.getElementById('page-subtitle');
+  if (subtitleEl) subtitleEl.textContent = `${customers.length} contact${customers.length !== 1 ? 's' : ''}`;
 
   if (customers.length === 0) {
     emptyEl.hidden = false;
@@ -847,8 +985,12 @@ function thisWeekRange() {
 
 function renderTasks(allTasks) {
   const now = Date.now();
+  const td = todayRange();
+  const wk = thisWeekRange();
 
   let tasks = allTasks.filter(task => {
+    if (currentTaskFilter === 'today')    return !task.completed && task.remindAt >= td.start && task.remindAt <= td.end;
+    if (currentTaskFilter === 'thisweek') return !task.completed && task.remindAt >= wk.start && task.remindAt <= wk.end;
     if (currentTaskFilter === 'pending')  return !task.completed && task.remindAt >= now;
     if (currentTaskFilter === 'overdue')  return !task.completed && task.remindAt < now;
     if (currentTaskFilter === 'completed') return task.completed;
@@ -904,9 +1046,9 @@ function renderTasks(allTasks) {
     }
   }
 
-  const titles = { all: 'All Tasks', pending: 'Pending', overdue: 'Overdue', completed: 'Completed' };
-  const titleEl = document.getElementById('tasks-page-title');
-  const subtitleEl = document.getElementById('tasks-page-subtitle');
+  const titles = { all: 'All Tasks', today: 'Today', thisweek: 'This Week', pending: 'Pending', overdue: 'Overdue', completed: 'Completed' };
+  const titleEl = document.getElementById('page-title');
+  const subtitleEl = document.getElementById('page-subtitle');
   if (titleEl) titleEl.textContent = titles[currentTaskFilter] || 'All Tasks';
   if (subtitleEl) subtitleEl.textContent = `${tasks.length} task${tasks.length !== 1 ? 's' : ''}`;
 }
