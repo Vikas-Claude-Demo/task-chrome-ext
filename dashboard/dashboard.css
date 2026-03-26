@@ -1413,32 +1413,7 @@ body { display: flex; min-height: 100vh; }
 .tbl-btn--delete { background: transparent; color: var(--text-tertiary); }
 .tbl-btn--delete:hover { background: var(--red-light); color: var(--red); }
 
-/* ===================================================
-   Sidebar Settings Button
-=================================================== */
-.sidebar__settings-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: 100%;
-  margin-top: 8px;
-  padding: 8px 12px;
-  background: transparent;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  font-size: 12.5px;
-  font-family: var(--font);
-  font-weight: 500;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
-}
-.sidebar__settings-btn:hover {
-  background: var(--surface);
-  color: var(--text-primary);
-  border-color: var(--indigo);
-}
+/* (sidebar__settings-btn styles consolidated above in footer-actions) */
 
 /* ===================================================
    Settings Modal
@@ -1781,27 +1756,7 @@ body { display: flex; min-height: 100vh; }
 }
 .auth-switch-btn:hover { color: #2d56b5; }
 
-/* ===================================================
-   Sidebar Sign Out button
-=================================================== */
-.sidebar__signout-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: 100%;
-  margin-top: 6px;
-  padding: 8px 12px;
-  background: transparent;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  font-size: 12.5px;
-  font-family: var(--font);
-  font-weight: 500;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
-}
+/* (sidebar__signout-btn styles consolidated above in footer-actions) */
 .sidebar__signout-btn:hover {
   background: var(--red-light);
   color: var(--red);
