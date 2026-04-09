@@ -33,3 +33,19 @@ A log of key technical decisions made during this project. Append new entries �
 **Decision:** Maintain a lightweight `alarmTaskIndex` in `chrome.storage.local` with only the fields the service worker needs (id, contactName, description, remindAt, completed).
 **Reason:** The service worker can't access the full task objects efficiently. A slim index keeps alarm/notification logic fast without reading the entire task store.
 **Alternatives considered:** Reading full tasks in background.js (wasteful), storing alarm data in chrome.alarms metadata (too limited).
+
+---
+
+## 2026-04-09 — Scoped task documents under team/user collections
+
+**Decision:** Store authenticated tasks as Firestore documents under scoped collections (`teams/{teamId}/tasks/{taskId}` when the user belongs to a team, otherwise `users/{uid}/tasks/{taskId}`), and normalize task payloads to include `priority` and `tags`.
+**Reason:** Avoids global task arrays, supports team-shared task visibility by collection path, and makes incremental task updates (`patchTask`) cheaper and safer than rewriting full arrays.
+**Alternatives considered:** Keeping task arrays under profile documents (harder to scale and merge), team-only writes with no user fallback (breaks users without team setup).
+
+---
+
+## 2026-04-09 — Team-scoped owners and stages collections
+
+**Decision:** Store CRM settings as team subcollections: `teams/{teamId}/owners/{ownerId}` and `teams/{teamId}/stages/{stageId}`.
+**Reason:** Team settings become shared, queryable entities with metadata (`createdAt`, `createdBy`) and can be maintained independently of profile settings blobs.
+**Alternatives considered:** Storing owners/stages in profile `settings` map (not team-shared by default and harder to audit per-record metadata).

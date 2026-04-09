@@ -17,8 +17,10 @@
     <h2 class="auth-title">Nudge</h2>
     <p class="auth-subtitle" id="auth-subtitle">One tap. Back in the conversation</p>
     <form id="auth-form" class="auth-form" novalidate>
+      <input id="auth-name" type="text" class="auth-input" placeholder="Full Name" autocomplete="name" hidden />
       <input id="auth-email" type="email" class="auth-input" placeholder="Email" autocomplete="email" required />
       <input id="auth-password" type="password" class="auth-input" placeholder="Password" autocomplete="current-password" required />
+      <input id="auth-teamcode" type="text" class="auth-input" placeholder="Team Code (optional — leave blank to create new team)" autocomplete="off" maxlength="8" hidden />
       <p id="auth-error" class="auth-error" hidden></p>
       <button type="submit" id="auth-submit" class="auth-submit-btn">Sign In</button>
     </form>
@@ -33,7 +35,7 @@
   <!-- ===== SIDEBAR ===== -->
   <aside class="sidebar">
     <div class="sidebar__logo">
-      <span class="sidebar__logo-icon">⚡</span>
+      <img src="../icons/icon48.png" alt="Nudge Logo" class="sidebar__logo-icon"/>
       <div class="sidebar__logo-text">
         <strong>Nudge</strong>
         <small>Smart CRM</small>
@@ -253,6 +255,7 @@
     <div class="settings-tabs" role="tablist">
       <button class="settings-tab settings-tab--active" data-tab="owners" role="tab" aria-selected="true" id="stab-owners">Owners</button>
       <button class="settings-tab" data-tab="stages" role="tab" aria-selected="false" id="stab-stages">Stages</button>
+      <button class="settings-tab" data-tab="team" role="tab" aria-selected="false" id="stab-team">Team</button>
     </div>
     <div class="settings-panel" data-panel="owners" role="tabpanel" aria-labelledby="stab-owners">
       <div id="settings-owners-list" class="settings-list"></div>
@@ -261,6 +264,9 @@
     <div class="settings-panel settings-panel--hidden" data-panel="stages" role="tabpanel" aria-labelledby="stab-stages">
       <div id="settings-stages-list" class="settings-list"></div>
       <button id="settings-add-stage" class="settings-add-btn">+ Add Stage</button>
+    </div>
+    <div class="settings-panel settings-panel--hidden" data-panel="team" role="tabpanel" aria-labelledby="stab-team">
+      <div id="settings-team-panel"></div>
     </div>
     <div class="settings-modal__footer">
       <button id="signout-btn" class="settings-footer-btn settings-footer-btn--signout" title="Sign out">⏏ Sign Out</button>

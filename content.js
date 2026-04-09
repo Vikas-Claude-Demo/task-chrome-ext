@@ -377,9 +377,8 @@ function createWidget() {
         // Attach chat to existing task's description
         const separator = matchingTask.description ? '\n\n───── Chat grabbed ' + new Date().toLocaleString() + ' ─────\n\n' : '';
         matchingTask.description = (matchingTask.description || '') + separator + chatText;
-        const updatedTasks = existingTasks.map(t => t.id === matchingTask.id ? matchingTask : t);
         try {
-          await cloudStore.setTasks(updatedTasks);
+          await cloudStore.patchTask(matchingTask.id, { description: matchingTask.description, updatedAt: Date.now() });
           showGrabChatToast('✅ Chat copied & attached to existing task!', '#2da44e');
           renderPanelTasks();
         } catch (_) {
@@ -603,8 +602,7 @@ async function renderPanelTasks() {
       doneBtn.className = 'lts-ptask-btn lts-ptask-btn--done';
       doneBtn.textContent = '✓ Done';
       doneBtn.addEventListener('click', async () => {
-        const tasks = (await cloudStore.getTasks()).map(t => t.id === task.id ? { ...t, completed: true } : t);
-        await cloudStore.setTasks(tasks);
+        await cloudStore.patchTask(task.id, { completed: true, status: 'done', updatedAt: Date.now() });
         chrome.runtime.sendMessage({ action: 'DELETE_ALARM', alarmName: task.id });
         renderPanelTasks();
       });
@@ -614,8 +612,7 @@ async function renderPanelTasks() {
     delBtn.className = 'lts-ptask-btn lts-ptask-btn--del';
     delBtn.textContent = 'Delete';
     delBtn.addEventListener('click', async () => {
-      const tasks = (await cloudStore.getTasks()).filter(t => t.id !== task.id);
-      await cloudStore.setTasks(tasks);
+      await cloudStore.removeTask(task.id);
       chrome.runtime.sendMessage({ action: 'DELETE_ALARM', alarmName: task.id });
       renderPanelTasks();
     });
@@ -1477,34 +1474,132 @@ async function openModal(contactName, threadUrl, platform, prefillDescription) {
 
   const profileLabel = document.createElement('p');
   profileLabel.className = 'lts-field-label';
-  profileLabel.textContent = platform === 'linkedin' ? 'LinkedIn Profile' : 'Profile';
+  profileLabel.textContent = 'LinkedIn Profile';
 
   const profileInput = document.createElement('input');
   profileInput.type = 'url';
   profileInput.id = 'lts-profile-url';
   profileInput.className = 'lts-input';
   profileInput.value = profileUrl;
-  profileInput.placeholder = platform === 'linkedin' ? 'https://linkedin.com/in/...' : 'Profile URL';
+  profileInput.placeholder = 'https://linkedin.com/in/...';
 
   profileRow.append(profileLabel, profileInput);
 
-  // ---- Thread URL (readonly link) ----
-  const threadRow = document.createElement('div');
-  threadRow.className = 'lts-field-group';
+  // ---- Email (optional) ----
+  const emailRow = document.createElement('div');
+  emailRow.className = 'lts-field-group';
 
-  const threadLabel = document.createElement('p');
-  threadLabel.className = 'lts-field-label';
-  threadLabel.textContent = cfg.thread;
+  const emailLabel = document.createElement('label');
+  emailLabel.className = 'lts-field-label';
+  emailLabel.textContent = 'Email';
+  emailLabel.htmlFor = 'lts-email';
 
-  const threadLink = document.createElement('a');
-  threadLink.className = 'lts-thread-url';
-  threadLink.href = threadUrl;
-  threadLink.target = '_blank';
-  threadLink.rel = 'noopener noreferrer';
-  threadLink.textContent = shortenUrl(threadUrl, platform);
-  threadLink.title = threadUrl;
+  const emailInput = document.createElement('input');
+  emailInput.type = 'email';
+  emailInput.id = 'lts-email';
+  emailInput.className = 'lts-input';
+  emailInput.placeholder = 'name@company.com (optional)';
 
-  threadRow.append(threadLabel, threadLink);
+  emailRow.append(emailLabel, emailInput);
+
+  // ---- Contact search (team contacts) ----
+  const searchRow = document.createElement('div');
+  searchRow.className = 'lts-field-group lts-contact-search';
+
+  const searchLabel = document.createElement('label');
+  searchLabel.className = 'lts-field-label';
+  searchLabel.textContent = 'Search Contact';
+  searchLabel.htmlFor = 'lts-contact-search';
+
+  const searchInput = document.createElement('input');
+  searchInput.type = 'search';
+  searchInput.id = 'lts-contact-search';
+  searchInput.className = 'lts-input';
+  searchInput.placeholder = 'Search by first name or last name';
+
+  const searchResults = document.createElement('div');
+  searchResults.className = 'lts-contact-results';
+  searchResults.hidden = true;
+
+  let searchTimer = null;
+
+  const contactTitleFromDoc = (contact) => {
+    const des = String(contact.designation || '').trim();
+    const comp = String(contact.company || '').trim();
+    if (des && comp) return `${des} at ${comp}`;
+    return des || comp || '';
+  };
+
+  const applyContactToForm = (contact) => {
+    fnInput.value = contact.firstName || '';
+    lnInput.value = contact.lastName || '';
+    const nameText = [contact.firstName || '', contact.lastName || ''].join(' ').trim() || contact.name || '';
+    searchInput.value = nameText;
+    profileInput.value = contact.linkedinUrl || '';
+    emailInput.value = contact.email || '';
+    if (!titleInput.value.trim()) {
+      titleInput.value = contactTitleFromDoc(contact);
+    }
+  };
+
+  const hideSearchResults = () => {
+    searchResults.hidden = true;
+    searchResults.innerHTML = '';
+  };
+
+  const renderSearchResults = (contacts) => {
+    searchResults.innerHTML = '';
+    if (!Array.isArray(contacts) || contacts.length === 0) {
+      hideSearchResults();
+      return;
+    }
+
+    contacts.forEach((contact) => {
+      const option = document.createElement('button');
+      option.type = 'button';
+      option.className = 'lts-contact-option';
+      const displayName = [contact.firstName || '', contact.lastName || ''].join(' ').trim() || contact.name || 'Unknown';
+      const subtitle = contactTitleFromDoc(contact) || contact.email || '';
+      option.innerHTML = `
+        <span class="lts-contact-option__name">${displayName}</span>
+        <span class="lts-contact-option__meta">${subtitle}</span>
+      `;
+      option.addEventListener('click', () => {
+        applyContactToForm(contact);
+        hideSearchResults();
+      });
+      searchResults.appendChild(option);
+    });
+
+    searchResults.hidden = false;
+  };
+
+  searchInput.addEventListener('input', () => {
+    if (searchTimer) clearTimeout(searchTimer);
+    const q = searchInput.value.trim();
+    if (!q) {
+      hideSearchResults();
+      return;
+    }
+    searchTimer = setTimeout(async () => {
+      try {
+        const contacts = await cloudStore.searchTeamContacts(q, 8);
+        renderSearchResults(contacts);
+      } catch (_) {
+        hideSearchResults();
+      }
+    }, 180);
+  });
+
+  searchInput.addEventListener('focus', () => {
+    if (searchResults.children.length > 0) searchResults.hidden = false;
+  });
+
+  modal.addEventListener('click', (e) => {
+    if (!searchRow.contains(e.target)) hideSearchResults();
+  });
+
+  searchRow.append(searchLabel, searchInput, searchResults);
 
   // ---- Stage selector ----
   let selectedStage = 'prospect';
@@ -1541,6 +1636,20 @@ async function openModal(contactName, threadUrl, platform, prefillDescription) {
   const pillsContainer = document.createElement('div');
   pillsContainer.className = 'lts-pills';
 
+  const activatePill = (activePill, days) => {
+    selectedDays = days;
+    pillsContainer.querySelectorAll('.lts-pill').forEach(p => {
+      p.classList.remove('lts-pill--active');
+      p.style.removeProperty('background');
+      p.style.removeProperty('border-color');
+    });
+    activePill.classList.add('lts-pill--active');
+    activePill.style.setProperty('background', cfg.color, 'important');
+    activePill.style.setProperty('border-color', cfg.color, 'important');
+    const preview = document.getElementById('lts-reminder-preview');
+    if (preview) preview.textContent = formatPreviewDate(daysFromNow(selectedDays));
+  };
+
   FOLLOWUP_OPTIONS.forEach(opt => {
     const pill = document.createElement('button');
     pill.type = 'button';
@@ -1548,29 +1657,51 @@ async function openModal(contactName, threadUrl, platform, prefillDescription) {
     pill.textContent = opt.label;
     pill.dataset.days = opt.days;
 
-    // Active pill uses platform color
     if (opt.days === selectedDays) {
       pill.style.setProperty('background', cfg.color, 'important');
       pill.style.setProperty('border-color', cfg.color, 'important');
     }
 
     pill.addEventListener('click', () => {
-      selectedDays = opt.days;
-      pillsContainer.querySelectorAll('.lts-pill').forEach(p => {
-        p.classList.remove('lts-pill--active');
-        p.style.removeProperty('background');
-        p.style.removeProperty('border-color');
-      });
-      pill.classList.add('lts-pill--active');
-      pill.style.setProperty('background', cfg.color, 'important');
-      pill.style.setProperty('border-color', cfg.color, 'important');
-
-      const preview = document.getElementById('lts-reminder-preview');
-      if (preview) preview.textContent = formatPreviewDate(daysFromNow(selectedDays));
+      customInput.style.setProperty('display', 'none', 'important');
+      activatePill(pill, opt.days);
     });
 
     pillsContainer.appendChild(pill);
   });
+
+  // Custom pill + inline input
+  const customPill = document.createElement('button');
+  customPill.type = 'button';
+  customPill.className = 'lts-pill';
+  customPill.textContent = 'Custom';
+
+  const customInput = document.createElement('input');
+  customInput.type = 'number';
+  customInput.min = '1';
+  customInput.max = '365';
+  customInput.placeholder = 'days';
+  customInput.className = 'lts-custom-days-input';
+  customInput.style.setProperty('display', 'none', 'important');
+
+  customPill.addEventListener('click', () => {
+    activatePill(customPill, selectedDays);
+    customInput.style.setProperty('display', 'inline-block', 'important');
+    customInput.focus();
+    customInput.select();
+  });
+
+  customInput.addEventListener('input', () => {
+    const v = parseInt(customInput.value, 10);
+    if (v > 0 && v <= 365) {
+      selectedDays = v;
+      const preview = document.getElementById('lts-reminder-preview');
+      if (preview) preview.textContent = formatPreviewDate(daysFromNow(selectedDays));
+    }
+  });
+
+  pillsContainer.appendChild(customPill);
+  pillsContainer.appendChild(customInput);
 
   const reminderPreview = document.createElement('p');
   reminderPreview.id = 'lts-reminder-preview';
@@ -1626,13 +1757,14 @@ async function openModal(contactName, threadUrl, platform, prefillDescription) {
     const finalFirstName = fnInput.value.trim();
     const finalLastName = lnInput.value.trim();
     const finalProfileUrl = profileInput.value.trim();
+    const finalEmail = emailInput.value.trim();
     const finalTitle = titleInput.value.trim();
     const finalContactName = `${finalFirstName} ${finalLastName}`.trim() || contactName;
-    handleSave(finalContactName, threadUrl, descInput, selectedDays, errorEl, platform, selectedStage, finalFirstName, finalLastName, finalProfileUrl, finalTitle);
+    handleSave(finalContactName, threadUrl, descInput, selectedDays, errorEl, platform, selectedStage, finalFirstName, finalLastName, finalProfileUrl, finalEmail, finalTitle);
   });
 
   // ---- Assemble ----
-  modal.append(header, nameRow, titleRow, profileRow, threadRow, stageRow, followupRow, descRow, errorEl, saveBtn);
+  modal.append(header, searchRow, nameRow, titleRow, profileRow, emailRow, stageRow, followupRow, descRow, errorEl, saveBtn);
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
 
@@ -1670,7 +1802,7 @@ function showExtensionReloadToast(message) {
   }, 3500);
 }
 
-async function handleSave(contactName, threadUrl, descInput, selectedDays, errorEl, platform, stage, firstName, lastName, profileUrl, title) {
+async function handleSave(contactName, threadUrl, descInput, selectedDays, errorEl, platform, stage, firstName, lastName, profileUrl, email, title) {
   try {
     const description = descInput.value.trim();
     const remindAt = daysFromNow(selectedDays);
@@ -1686,37 +1818,85 @@ async function handleSave(contactName, threadUrl, descInput, selectedDays, error
       owner = 'owner_default';
     }
 
+    // Validate selected owner against team owner docs/settings.
+    // If the selected owner is stale, fall back to the first configured owner id.
+    try {
+      const settings = await cloudStore.getSettings();
+      const owners = (settings && Array.isArray(settings.owners)) ? settings.owners : [];
+      if (owners.length > 0 && !owners.find((o) => o.id === owner)) {
+        owner = owners[0].id;
+      }
+    } catch (_) {
+      // Keep best-effort selected owner.
+    }
+
+    // Get creator identity for attribution
+    let authData = null;
+    try { authData = (await chrome.storage.local.get('auth')).auth || null; } catch (_) {}
+
+    const now = new Date();
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    const normalizedType = (
+      platform === 'linkedin' ? 'linkedin'
+        : (platform === 'gmail' || platform === 'outlook') ? 'email'
+          : platform === 'whatsapp' ? 'meeting'
+            : 'linkedin'
+    );
     const task = {
       id: `task_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      type: normalizedType,
+      platform: platform || 'linkedin',
+      contact: {
+        name: contactName || '',
+        firstName: firstName || '',
+        lastName: lastName || '',
+        profileUrl: profileUrl || '',
+        title: title || '',
+        email: normalizedEmail,
+      },
+      stage: stage || 'prospect',
+      status: 'pending',
+      description,
+      completed: false,
+      // ownerId is always the selected owner document id from team settings
+      ownerId: owner,
+      assignedTo: '',
+      followUpDays: selectedDays,
+      remindAt: now.getTime() + selectedDays * 86400000,
+      createdAt: now.getTime(),
+      updatedAt: now.getTime(),
+      threadUrl: threadUrl || '',
+      priority: 'medium',
+      tags: [],
+      // Creator attribution as Firestore-style user reference
+      createdBy: authData && authData.localId ? `users/${authData.localId}` : '',
+      // Keep flat fields for backwards-compat with existing render code
+      contactName: contactName || '',
       firstName: firstName || '',
       lastName: lastName || '',
-      contactName,
-      title: title || '',
       profileUrl: profileUrl || '',
-      threadUrl,
-      description,
-      remindAt: remindAt.getTime(),
-      followupDays: selectedDays,
-      createdAt: Date.now(),
-      completed: false,
-      platform: platform || 'linkedin',
-      stage: stage || 'prospect',
+      email: normalizedEmail,
+      title: title || '',
       owner,
     };
 
-    let tasks = [];
-    try {
-      tasks = cloudStore ? await cloudStore.getTasks() : [];
-    } catch (_) {
-      const local = await chrome.storage.local.get('tasks').catch(() => ({}));
-      tasks = Array.isArray(local.tasks) ? local.tasks : [];
+    if (cloudStore && (platform === 'linkedin' || platform === 'gmail' || platform === 'outlook')) {
+      await cloudStore.ensureTeamContact({
+        name: contactName || '',
+        firstName: firstName || '',
+        lastName: lastName || '',
+        linkedinUrl: profileUrl || '',
+        email: normalizedEmail,
+        phone: '',
+        company: '',
+        designation: '',
+      }).catch(() => null);
     }
 
-    const nextTasks = [...tasks, task];
     let persisted = false;
     try {
       if (cloudStore) {
-        await cloudStore.setTasks(nextTasks);
+        await cloudStore.saveTask(task);
         persisted = true;
       }
     } catch (_) {
@@ -1724,12 +1904,10 @@ async function handleSave(contactName, threadUrl, descInput, selectedDays, error
     }
 
     if (!persisted) {
-      await chrome.storage.local.set({ tasks: nextTasks });
+      const local = await chrome.storage.local.get('tasks').catch(() => ({}));
+      const localTasks = Array.isArray(local.tasks) ? local.tasks : [];
+      await chrome.storage.local.set({ tasks: [...localTasks, task] });
       persisted = true;
-    }
-
-    if (!persisted) {
-      throw new Error('SAVE_PERSIST_FAILED');
     }
 
     chrome.runtime.sendMessage({ action: 'CREATE_ALARM', task });

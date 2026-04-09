@@ -163,19 +163,24 @@ function getOwner(id) {
 }
 
 function getStage(value) {
-  return STAGES.find(s => s.value === value) || STAGES[0];
+  return STAGES.find(s => s.value === value) || STAGES[0] || {
+    value: 'unassigned',
+    label: 'No Stage',
+    color: '#9ba4b0',
+    bg: '#f3f4f6',
+  };
 }
 
 // ===== Load settings from storage =====
 
 async function loadSettings() {
   const s = await cloudStore.getSettings();
-  if (s && Array.isArray(s.owners) && s.owners.length > 0) {
+  if (s && Array.isArray(s.owners)) {
     OWNERS = s.owners;
   } else {
     OWNERS = DEFAULT_SETTINGS.owners;
   }
-  if (s && Array.isArray(s.stages) && s.stages.length > 0) {
+  if (s && Array.isArray(s.stages)) {
     STAGES = s.stages;
   } else {
     STAGES = DEFAULT_SETTINGS.stages;
@@ -201,11 +206,15 @@ async function completePostSignInMergeFlow() {
   try {
     let syncResult = await cloudStore.postSignIn();
     if (syncResult && syncResult.needsMergeChoice) {
+      if (!syncResult.guestTaskCount || syncResult.guestTaskCount <= 0) {
+        syncResult = await cloudStore.postSignIn({ mergeGuestData: false });
+      } else {
       const prompt = syncResult.hasRemoteData
         ? `Found ${syncResult.guestTaskCount} guest tasks on this device. Merge them into your account data?`
         : `No cloud data found for this account. Merge ${syncResult.guestTaskCount} guest tasks into this account?`;
       const shouldMerge = confirm(prompt);
       syncResult = await cloudStore.postSignIn({ mergeGuestData: shouldMerge });
+      }
     }
     if (syncResult && syncResult.ok === false && syncResult.reason === 'REMOTE_WRITE_FAILED') {
       alert('Signed in, but guest data merge failed (cloud write issue). Your guest data is kept locally.');
@@ -259,12 +268,61 @@ function toggleAuthMode() {
   document.getElementById('auth-switch-text').textContent = isSignUp ? 'Already have an account?' : "Don't have an account?";
   document.getElementById('auth-switch-btn').textContent  = isSignUp ? 'Sign In' : 'Sign Up';
   document.getElementById('auth-error').hidden = true;
+
+  // Show signup-only fields
+  const nameEl     = document.getElementById('auth-name');
+  const teamcodeEl = document.getElementById('auth-teamcode');
+  if (nameEl)     { nameEl.hidden     = !isSignUp; nameEl.required     = isSignUp; }
+  if (teamcodeEl) { teamcodeEl.hidden = !isSignUp; }
+}
+
+// Provision Firestore user + team docs after a successful signup.
+// If teamCode is provided and valid, joins that team; otherwise creates a new one.
+async function provisionUserAndTeam(userId, idToken, name, email, teamCode) {
+  const cloud = window.TaskSaverCloud;
+  let teamId, role;
+
+  const trimmedCode = (teamCode || '').trim().toUpperCase();
+  if (trimmedCode) {
+    // Try to join an existing team
+    const found = await cloud.findTeamByCode(trimmedCode, idToken);
+    if (!found) throw new Error('TEAM_NOT_FOUND');
+    teamId = found.teamId;
+    role   = 'member';
+
+    // Add to subcollection (includes name/email so display works without cross-user reads)
+    await cloud.addTeamMember(teamId, userId, idToken, { userId, role, name, email });
+    // Update members array on team doc using a field-masked PATCH (satisfies self-join rule)
+    const existingMembers = Array.isArray(found.members) ? found.members : [];
+    if (!existingMembers.includes(userId)) {
+      await cloud.updateTeamMembersArray(teamId, idToken, [...existingMembers, userId]);
+    }
+  } else {
+    // Create a new team with the user as owner
+    teamId = `team_${userId}`;
+    role   = 'admin';
+    const generatedCode = cloud.generateTeamCode();
+    const teamName      = name ? `${name}'s Team` : 'My Team';
+
+    await cloud.createTeamDoc(teamId, idToken, {
+      name:    teamName,
+      teamCode: generatedCode,
+      ownerId: userId,
+      members: [userId],
+    });
+    await cloud.seedDefaultTeamStages(teamId, idToken, userId);
+    await cloud.addTeamMember(teamId, userId, idToken, { userId, role, name, email });
+  }
+
+  await cloud.createUserProfile(userId, idToken, { name, email, teamId, role });
 }
 
 async function handleLogin(e) {
   e.preventDefault();
   const email     = document.getElementById('auth-email').value.trim();
   const password  = document.getElementById('auth-password').value;
+  const name      = (document.getElementById('auth-name')?.value || '').trim();
+  const teamCode  = document.getElementById('auth-teamcode')?.value || '';
   const errorEl   = document.getElementById('auth-error');
   const submitBtn = document.getElementById('auth-submit');
   const isSignUp  = _authMode === 'signup';
@@ -277,6 +335,10 @@ async function handleLogin(e) {
     const json = isSignUp
       ? await signUpWithEmailPassword(email, password)
       : await signInWithEmailPassword(email, password);
+
+    if (isSignUp) {
+      await provisionUserAndTeam(json.localId, json.idToken, name, email, teamCode);
+    }
 
     await loadSettings();
     const owner = OWNERS.find(o => o.email && o.email.toLowerCase() === email.toLowerCase());
@@ -291,6 +353,7 @@ async function handleLogin(e) {
         refreshToken: json.refreshToken,
         localId:      json.localId,
         email:        json.email,
+        name:         name || null,
         ownerId,
         expiresAt:    Date.now() + (parseInt(json.expiresIn, 10) * 1000),
       }
@@ -298,14 +361,15 @@ async function handleLogin(e) {
 
     await chrome.storage.sync.set({ currentOwner: ownerId });
 
-    // Close modal and refresh access state — user is now signed in
     closeAuthModal();
     await completePostSignInMergeFlow();
 
     await initApp();
     await applyAccessState();
   } catch (err) {
-    errorEl.textContent = friendlyAuthError(err.message, _authMode);
+    errorEl.textContent = err.message === 'TEAM_NOT_FOUND'
+      ? 'Team code not found. Check the code or leave it blank to create a new team.'
+      : friendlyAuthError(err.message, _authMode);
     errorEl.hidden = false;
     submitBtn.disabled = false;
     submitBtn.textContent = isSignUp ? 'Sign Up' : 'Sign In';
@@ -492,8 +556,10 @@ function openAuthModal(mode) {
       One tap. Back in the conversation
     </p>
     <form id="auth-modal-form" class="auth-form" novalidate>
+      ${isSignUp ? `<input id="auth-modal-name" type="text" class="auth-input" placeholder="Full Name" autocomplete="name" required />` : ''}
       <input id="auth-modal-email" type="email" class="auth-input" placeholder="Email" autocomplete="email" required />
       <input id="auth-modal-password" type="password" class="auth-input" placeholder="Password" autocomplete="current-password" required />
+      ${isSignUp ? `<input id="auth-modal-teamcode" type="text" class="auth-input" placeholder="Team Code (optional — leave blank to create new team)" autocomplete="off" maxlength="8" />` : ''}
       <p id="auth-modal-error" class="auth-error" hidden></p>
       <button type="submit" id="auth-modal-submit" class="auth-submit-btn">
         ${isSignUp ? 'Sign Up' : 'Sign In'}
@@ -530,6 +596,8 @@ async function handleAuthModalLogin(e) {
   e.preventDefault();
   const email     = document.getElementById('auth-modal-email').value.trim();
   const password  = document.getElementById('auth-modal-password').value;
+  const name      = (document.getElementById('auth-modal-name')?.value || '').trim();
+  const teamCode  = document.getElementById('auth-modal-teamcode')?.value || '';
   const errorEl   = document.getElementById('auth-modal-error');
   const submitBtn = document.getElementById('auth-modal-submit');
   const isSignUp  = _authMode === 'signup';
@@ -542,6 +610,10 @@ async function handleAuthModalLogin(e) {
     const json = isSignUp
       ? await signUpWithEmailPassword(email, password)
       : await signInWithEmailPassword(email, password);
+
+    if (isSignUp) {
+      await provisionUserAndTeam(json.localId, json.idToken, name, email, teamCode);
+    }
 
     await loadSettings();
     const owner = OWNERS.find(o => o.email && o.email.toLowerCase() === email.toLowerCase());
@@ -556,6 +628,7 @@ async function handleAuthModalLogin(e) {
         refreshToken: json.refreshToken,
         localId:      json.localId,
         email:        json.email,
+        name:         name || null,
         ownerId,
         expiresAt:    Date.now() + (parseInt(json.expiresIn, 10) * 1000),
       }
@@ -563,14 +636,15 @@ async function handleAuthModalLogin(e) {
 
     await chrome.storage.sync.set({ currentOwner: ownerId });
 
-    // Close modal and refresh access state — user is now signed in
     closeAuthModal();
     await completePostSignInMergeFlow();
 
     await initApp();
     await applyAccessState();
   } catch (err) {
-    errorEl.textContent = friendlyAuthError(err.message, _authMode);
+    errorEl.textContent = err.message === 'TEAM_NOT_FOUND'
+      ? 'Team code not found. Check the code or leave it blank to create a new team.'
+      : friendlyAuthError(err.message, _authMode);
     errorEl.hidden = false;
     submitBtn.disabled = false;
     submitBtn.textContent = isSignUp ? 'Sign Up' : 'Sign In';
@@ -1678,24 +1752,21 @@ function buildStageBadge(task) {
 }
 
 async function handleStageChange(taskId, newStage) {
-  const tasks = (await cloudStore.getTasks()).map(t => t.id === taskId ? { ...t, stage: newStage } : t);
-  await cloudStore.setTasks(tasks);
+  await cloudStore.patchTask(taskId, { stage: newStage, updatedAt: Date.now() });
   await renderAll();
 }
 
 // ===== Actions =====
 
 async function handleComplete(taskId) {
-  const tasks = (await cloudStore.getTasks()).map(t => t.id === taskId ? { ...t, completed: true } : t);
-  await cloudStore.setTasks(tasks);
+  await cloudStore.patchTask(taskId, { completed: true, status: 'done', updatedAt: Date.now() });
   chrome.runtime.sendMessage({ action: 'DELETE_ALARM', alarmName: taskId });
   await renderAll();
 }
 
 async function handleDelete(taskId) {
   if (!confirm('Delete this task?')) return;
-  const tasks = (await cloudStore.getTasks()).filter(t => t.id !== taskId);
-  await cloudStore.setTasks(tasks);
+  await cloudStore.removeTask(taskId);
   chrome.runtime.sendMessage({ action: 'DELETE_ALARM', alarmName: taskId });
   await renderAll();
 }
@@ -1809,6 +1880,7 @@ function setupSettings() {
       document.querySelectorAll('.settings-panel').forEach(p => {
         p.classList.toggle('settings-panel--hidden', p.dataset.panel !== target);
       });
+      if (target === 'team') renderSettingsTeam();
     });
   });
 
@@ -1848,6 +1920,9 @@ function openSettingsModal() {
   renderSettingsOwners();
   renderSettingsStages();
 
+  // Pre-populate the team panel content (async, non-blocking)
+  renderSettingsTeam();
+
   document.getElementById('settings-overlay').classList.remove('settings-hidden');
   document.getElementById('settings-modal').classList.remove('settings-hidden');
   document.getElementById('settings-close').focus();
@@ -1863,6 +1938,11 @@ function closeSettingsModal() {
 function renderSettingsOwners() {
   const container = document.getElementById('settings-owners-list');
   container.innerHTML = '';
+
+  if (_draftOwners.length === 0) {
+    container.innerHTML = '<p class="settings-team-empty">No owners yet. Click "+ Add Owner" to create one.</p>';
+    return;
+  }
 
   _draftOwners.forEach((owner, idx) => {
     const row = document.createElement('div');
@@ -1915,6 +1995,11 @@ function renderSettingsOwners() {
 function renderSettingsStages() {
   const container = document.getElementById('settings-stages-list');
   container.innerHTML = '';
+
+  if (_draftStages.length === 0) {
+    container.innerHTML = '<p class="settings-team-empty">No stages yet. Click "+ Add Stage" to create one.</p>';
+    return;
+  }
 
   _draftStages.forEach((stage, idx) => {
     const row = document.createElement('div');
@@ -1985,6 +2070,157 @@ function renderSettingsStages() {
     row.append(slugChip, labelInput, colorWrap, bgWrap, upBtn, downBtn, deleteBtn);
     container.appendChild(row);
   });
+}
+
+async function loadTeamData() {
+  const data = await chrome.storage.local.get(['auth']);
+  const auth = data.auth;
+  if (!auth || !auth.localId || !auth.idToken) return null;
+
+  const cloud = window.TaskSaverCloud;
+  const userProfile = await cloud.readDocAtPath(`users/${auth.localId}`, auth.idToken).catch(() => null);
+  if (!userProfile || !userProfile.teamId) return null;
+
+  const teamId = userProfile.teamId;
+  const [teamDoc, memberDocs] = await Promise.all([
+    cloud.readDocAtPath(`teams/${teamId}`, auth.idToken).catch(() => null),
+    cloud.listCollectionAtPath(`teams/${teamId}/members`, auth.idToken).catch(() => []),
+  ]);
+  if (!teamDoc) return null;
+
+  // name/email are stored directly on each member doc to avoid cross-user profile reads
+  const membersWithProfiles = memberDocs.map((m) => ({
+    userId: m.userId,
+    role: m.role || 'member',
+    joinedAt: m.joinedAt || 0,
+    name: m.name || '',
+    email: m.email || '',
+  }));
+
+  return {
+    teamCode: teamDoc.teamCode || '',
+    teamName: teamDoc.name || '',
+    ownerId: teamDoc.ownerId || '',
+    members: membersWithProfiles,
+  };
+}
+
+async function renderSettingsTeam() {
+  const container = document.getElementById('settings-team-panel');
+  container.innerHTML = '<p class="settings-team-empty">Loading team data…</p>';
+
+  let data;
+  try {
+    data = await loadTeamData();
+  } catch (_) {
+    data = null;
+  }
+
+  if (!data) {
+    container.innerHTML = '<p class="settings-team-empty">Sign in to view team info.</p>';
+    return;
+  }
+
+  container.innerHTML = '';
+
+  // Team code section
+  const codeSection = document.createElement('div');
+  codeSection.className = 'settings-team-section';
+
+  if (data.teamName) {
+    const teamNameEl = document.createElement('p');
+    teamNameEl.className = 'settings-team-name';
+    teamNameEl.textContent = data.teamName;
+    codeSection.appendChild(teamNameEl);
+  }
+
+  const codeLabel = document.createElement('p');
+  codeLabel.className = 'settings-team-label';
+  codeLabel.textContent = 'Team Code';
+  codeSection.appendChild(codeLabel);
+
+  const codeHint = document.createElement('p');
+  codeHint.className = 'settings-team-hint';
+  codeHint.textContent = 'Share this code with teammates so they can join your team on sign-up.';
+  codeSection.appendChild(codeHint);
+
+  const codeRow = document.createElement('div');
+  codeRow.className = 'settings-team-code-row';
+
+  const codeDisplay = document.createElement('span');
+  codeDisplay.className = 'settings-team-code';
+  codeDisplay.textContent = data.teamCode || '—';
+  codeRow.appendChild(codeDisplay);
+
+  if (data.teamCode) {
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'settings-team-copy-btn';
+    copyBtn.textContent = 'Copy';
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(data.teamCode).then(() => {
+        copyBtn.textContent = 'Copied!';
+        setTimeout(() => { copyBtn.textContent = 'Copy'; }, 2000);
+      }).catch(() => {});
+    });
+    codeRow.appendChild(copyBtn);
+  }
+
+  codeSection.appendChild(codeRow);
+  container.appendChild(codeSection);
+
+  // Members section
+  const membersSection = document.createElement('div');
+  membersSection.className = 'settings-team-section';
+
+  const membersLabel = document.createElement('p');
+  membersLabel.className = 'settings-team-label';
+  membersLabel.textContent = `Members (${data.members.length})`;
+  membersSection.appendChild(membersLabel);
+
+  const membersList = document.createElement('div');
+  membersList.className = 'settings-list';
+
+  if (data.members.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'settings-team-empty';
+    empty.textContent = 'No members found.';
+    membersList.appendChild(empty);
+  } else {
+    data.members.forEach((m) => {
+      const row = document.createElement('div');
+      row.className = 'settings-row';
+
+      const avatar = document.createElement('span');
+      avatar.className = 'settings-team-avatar';
+      avatar.textContent = (m.name || m.email || m.userId).charAt(0).toUpperCase();
+
+      const info = document.createElement('div');
+      info.className = 'settings-team-member-info';
+
+      const nameEl = document.createElement('span');
+      nameEl.className = 'settings-team-member-name';
+      nameEl.textContent = m.name || m.email || m.userId;
+
+      if (m.name && m.email) {
+        const emailEl = document.createElement('span');
+        emailEl.className = 'settings-team-member-email';
+        emailEl.textContent = m.email;
+        info.append(nameEl, emailEl);
+      } else {
+        info.appendChild(nameEl);
+      }
+
+      const roleBadge = document.createElement('span');
+      roleBadge.className = `settings-team-role settings-team-role--${m.role}`;
+      roleBadge.textContent = m.role;
+
+      row.append(avatar, info, roleBadge);
+      membersList.appendChild(row);
+    });
+  }
+
+  membersSection.appendChild(membersList);
+  container.appendChild(membersSection);
 }
 
 async function saveSettings() {

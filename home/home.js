@@ -27,6 +27,11 @@ function updateAuthModeUI() {
   document.getElementById('auth-switch-text').textContent = isSignUp ? 'Already have an account?' : "Don't have an account?";
   document.getElementById('auth-switch-btn').textContent = isSignUp ? 'Sign In' : 'Sign Up';
   document.getElementById('auth-error').hidden = true;
+
+  const nameEl     = document.getElementById('auth-name');
+  const teamcodeEl = document.getElementById('auth-teamcode');
+  if (nameEl)     { nameEl.hidden     = !isSignUp; nameEl.required     = isSignUp; }
+  if (teamcodeEl) { teamcodeEl.hidden = !isSignUp; }
 }
 
 function toggleAuthMode() {
@@ -96,11 +101,50 @@ async function ensureSingleOwnerSettings(email, preferredId) {
   return owner.id;
 }
 
+async function provisionUserAndTeam(userId, idToken, name, email, teamCode) {
+  const cloud = window.TaskSaverCloud;
+  let teamId, role;
+
+  const trimmedCode = (teamCode || '').trim().toUpperCase();
+  if (trimmedCode) {
+    const found = await cloud.findTeamByCode(trimmedCode, idToken);
+    if (!found) throw new Error('TEAM_NOT_FOUND');
+    teamId = found.teamId;
+    role   = 'member';
+
+    // Add to subcollection (includes name/email so display works without cross-user reads)
+    await cloud.addTeamMember(teamId, userId, idToken, { userId, role, name, email });
+    // Update members array on team doc using a field-masked PATCH (satisfies self-join rule)
+    const existingMembers = Array.isArray(found.members) ? found.members : [];
+    if (!existingMembers.includes(userId)) {
+      await cloud.updateTeamMembersArray(teamId, idToken, [...existingMembers, userId]);
+    }
+  } else {
+    teamId = `team_${userId}`;
+    role   = 'admin';
+    const generatedCode = cloud.generateTeamCode();
+    const teamName      = name ? `${name}'s Team` : 'My Team';
+
+    await cloud.createTeamDoc(teamId, idToken, {
+      name:     teamName,
+      teamCode: generatedCode,
+      ownerId:  userId,
+      members:  [userId],
+    });
+    await cloud.seedDefaultTeamStages(teamId, idToken, userId);
+    await cloud.addTeamMember(teamId, userId, idToken, { userId, role, name, email });
+  }
+
+  await cloud.createUserProfile(userId, idToken, { name, email, teamId, role });
+}
+
 async function handleAuthSubmit(e) {
   e.preventDefault();
-  const email = document.getElementById('auth-email').value.trim();
+  const email    = document.getElementById('auth-email').value.trim();
   const password = document.getElementById('auth-password').value;
-  const errorEl = document.getElementById('auth-error');
+  const name     = (document.getElementById('auth-name')?.value || '').trim();
+  const teamCode = document.getElementById('auth-teamcode')?.value || '';
+  const errorEl  = document.getElementById('auth-error');
   const submitBtn = document.getElementById('auth-submit');
   const isSignUp = authMode === 'signup';
 
@@ -113,24 +157,31 @@ async function handleAuthSubmit(e) {
       ? await signUpWithEmailPassword(email, password)
       : await signInWithEmailPassword(email, password);
 
+    if (isSignUp) {
+      await provisionUserAndTeam(json.localId, json.idToken, name, email, teamCode);
+    }
+
     const ownerId = isSignUp
       ? await ensureSingleOwnerSettings(json.email || email, `owner_${json.localId}`)
       : await resolveOwnerId(json.email || email);
     await chrome.storage.local.set({
       auth: {
-        idToken: json.idToken,
+        idToken:      json.idToken,
         refreshToken: json.refreshToken,
-        localId: json.localId,
-        email: json.email,
+        localId:      json.localId,
+        email:        json.email,
+        name:         name || null,
         ownerId,
-        expiresAt: Date.now() + (parseInt(json.expiresIn, 10) * 1000),
+        expiresAt:    Date.now() + (parseInt(json.expiresIn, 10) * 1000),
       }
     });
     await chrome.storage.sync.set({ currentOwner: ownerId });
     await completePostSignInMergeFlow();
     location.href = dashboardUrl();
   } catch (err) {
-    errorEl.textContent = friendlyAuthError(err.message, authMode);
+    errorEl.textContent = err.message === 'TEAM_NOT_FOUND'
+      ? 'Team code not found. Check the code or leave it blank to create a new team.'
+      : friendlyAuthError(err.message, authMode);
     errorEl.hidden = false;
     submitBtn.disabled = false;
     submitBtn.textContent = isSignUp ? 'Sign Up' : 'Sign In';
@@ -148,11 +199,15 @@ async function completePostSignInMergeFlow() {
   try {
     let syncResult = await cloudStore.postSignIn();
     if (syncResult && syncResult.needsMergeChoice) {
+      if (!syncResult.guestTaskCount || syncResult.guestTaskCount <= 0) {
+        syncResult = await cloudStore.postSignIn({ mergeGuestData: false });
+      } else {
       const prompt = syncResult.hasRemoteData
         ? `Found ${syncResult.guestTaskCount} guest tasks on this device. Merge them into your account data?`
         : `No cloud data found for this account. Merge ${syncResult.guestTaskCount} guest tasks into this account?`;
       const shouldMerge = confirm(prompt);
       syncResult = await cloudStore.postSignIn({ mergeGuestData: shouldMerge });
+      }
     }
     if (syncResult && syncResult.ok === false && syncResult.reason === 'REMOTE_WRITE_FAILED') {
       alert('Signed in, but guest data merge failed (cloud write issue). Your guest data is kept locally.');

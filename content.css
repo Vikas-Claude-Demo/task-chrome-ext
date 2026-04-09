@@ -165,6 +165,57 @@
   color: #c8ff00 !important;
 }
 
+/* ===================================================
+   Contact search in modal
+=================================================== */
+.lts-contact-search {
+  position: relative !important;
+}
+
+.lts-contact-results {
+  margin-top: 6px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+  max-height: 170px !important;
+  overflow-y: auto !important;
+  background: #151520 !important;
+  border: 1px solid rgba(255,255,255,0.08) !important;
+  border-radius: 8px !important;
+  padding: 6px !important;
+}
+
+.lts-contact-option {
+  border: 1px solid rgba(255,255,255,0.08) !important;
+  background: #1a1a24 !important;
+  border-radius: 7px !important;
+  padding: 7px 9px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  gap: 2px !important;
+  cursor: pointer !important;
+  transition: border-color 0.12s, background 0.12s !important;
+  font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+}
+
+.lts-contact-option:hover {
+  border-color: rgba(200,255,0,0.35) !important;
+  background: rgba(200,255,0,0.08) !important;
+}
+
+.lts-contact-option__name {
+  color: #e8e8ed !important;
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
+}
+
+.lts-contact-option__meta {
+  color: rgba(255,255,255,0.58) !important;
+  font-size: 11px !important;
+  font-weight: 400 !important;
+}
+
 /* --- Filter tabs --- */
 .lts-panel-tabs {
   display: flex !important;
@@ -497,6 +548,25 @@
   font-weight: 600 !important;
 }
 
+.lts-custom-days-input {
+  width: 64px !important;
+  padding: 5px 8px !important;
+  border-radius: 20px !important;
+  border: 1px solid rgba(255,255,255,0.2) !important;
+  background: rgba(255,255,255,0.07) !important;
+  color: #fff !important;
+  font-size: 12.5px !important;
+  font-family: inherit !important;
+  text-align: center !important;
+  outline: none !important;
+  -moz-appearance: textfield !important;
+}
+.lts-custom-days-input::-webkit-inner-spin-button,
+.lts-custom-days-input::-webkit-outer-spin-button { -webkit-appearance: none !important; appearance: none !important; margin: 0 !important; }
+.lts-custom-days-input:focus {
+  border-color: rgba(200,255,0,0.5) !important;
+}
+
 .lts-reminder-preview {
   font-size: 12px !important;
   color: rgba(255,255,255,0.3) !important;
@@ -734,4 +804,8 @@
   color: rgba(255,255,255,0.6) !important;
   white-space: pre-wrap !important;
   word-break: break-word !important;
+  display: -webkit-box !important;
+  -webkit-line-clamp: 4 !important;
+  -webkit-box-orient: vertical !important;
+  overflow: hidden !important;
 }

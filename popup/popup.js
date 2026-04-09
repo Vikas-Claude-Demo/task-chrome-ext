@@ -175,11 +175,15 @@ async function completePostSignInMergeFlow() {
   try {
     let syncResult = await cloudStore.postSignIn();
     if (syncResult && syncResult.needsMergeChoice) {
+      if (!syncResult.guestTaskCount || syncResult.guestTaskCount <= 0) {
+        syncResult = await cloudStore.postSignIn({ mergeGuestData: false });
+      } else {
       const prompt = syncResult.hasRemoteData
         ? `Found ${syncResult.guestTaskCount} guest tasks on this device. Merge them into your account data?`
         : `No cloud data found for this account. Merge ${syncResult.guestTaskCount} guest tasks into this account?`;
       const shouldMerge = confirm(prompt);
       syncResult = await cloudStore.postSignIn({ mergeGuestData: shouldMerge });
+      }
     }
     if (syncResult && syncResult.ok === false && syncResult.reason === 'REMOTE_WRITE_FAILED') {
       alert('Signed in, but guest data merge failed (cloud write issue). Your guest data is kept locally.');
@@ -294,18 +298,19 @@ async function handleLogin(e) {
 async function initApp() {
   await loadSettings();
 
-  // Resolve currentOwner: prefer auth-stamped ownerId, then sync storage
-  const authState = await getAuthState();
-  if (authState?.ownerId && OWNERS.find(o => o.id === authState.ownerId)) {
-    currentOwner = authState.ownerId;
-    await chrome.storage.sync.set({ currentOwner });
+  // Resolve currentOwner from the selected owner id (sync) first.
+  // This keeps task.ownerId aligned with the owner doc chosen in settings.
+  const stored = await chrome.storage.sync.get('currentOwner');
+  if (stored.currentOwner && OWNERS.find(o => o.id === stored.currentOwner)) {
+    currentOwner = stored.currentOwner;
   } else {
-    const stored = await chrome.storage.sync.get('currentOwner');
-    if (stored.currentOwner && OWNERS.find(o => o.id === stored.currentOwner)) {
-      currentOwner = stored.currentOwner;
+    const authState = await getAuthState();
+    if (authState?.ownerId && OWNERS.find(o => o.id === authState.ownerId)) {
+      currentOwner = authState.ownerId;
     } else {
       currentOwner = OWNERS[0].id;
     }
+    await chrome.storage.sync.set({ currentOwner });
   }
 
   setupOwnerSwitcher();
@@ -736,15 +741,17 @@ function buildTaskCard(task) {
 }
 
 async function handleComplete(taskId) {
-  const tasks = (await cloudStore.getTasks()).map(t => t.id === taskId ? { ...t, completed: true } : t);
-  await cloudStore.setTasks(tasks);
+  await cloudStore.patchTask(taskId, {
+    completed: true,
+    status: 'done',
+    updatedAt: Date.now(),
+  });
   chrome.runtime.sendMessage({ action: 'DELETE_ALARM', alarmName: taskId });
   await renderTasks();
 }
 
 async function handleDelete(taskId) {
-  const tasks = (await cloudStore.getTasks()).filter(t => t.id !== taskId);
-  await cloudStore.setTasks(tasks);
+  await cloudStore.removeTask(taskId);
   chrome.runtime.sendMessage({ action: 'DELETE_ALARM', alarmName: taskId });
   await renderTasks();
 }
