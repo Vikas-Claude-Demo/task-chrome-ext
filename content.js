@@ -924,7 +924,11 @@ function extractContactName(platform) {
 function parseContactName(fullName) {
   const trimmed = (fullName || '').trim();
   if (!trimmed || trimmed === 'Unknown Contact') return { firstName: '', lastName: '' };
-  const parts = trimmed.split(/\s+/);
+
+  // Guard against accidental "Name - Subject" style strings from email UIs.
+  const withoutSubject = trimmed.replace(/\s+[\u2014\u2013-]\s+.*$/, '').trim();
+  const withoutEmail = withoutSubject.replace(/<[^>]+>/g, '').trim();
+  const parts = withoutEmail.split(/\s+/);
   return { firstName: parts[0] || '', lastName: parts.slice(1).join(' ') || '' };
 }
 
@@ -1064,63 +1068,71 @@ function extractContactTitle(platform) {
   return '';
 }
 
-// ---- Gmail ----
-function extractGmailName() {
-  let sender = '';
-  let subject = '';
+function extractEmailAddress(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return '';
+  const match = raw.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  return match ? match[0].toLowerCase() : '';
+}
 
-  // ── Find the reading pane root first ─────────────────────────────────────
-  // All extractions should be scoped INSIDE the reading pane, not the full
-  // document — otherwise we accidentally read list-row data from other emails.
+function cleanEmailDisplayName(name) {
+  return String(name || '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/[\"']/g, '')
+    .trim();
+}
+
+function parseGmailContactInfo() {
   const pane = getGmailReadingPane();
+  const root = pane || document;
 
-  // ---- Subject ----
-  // .hP is the thread subject heading rendered inside the open reading pane.
+  let subject = '';
   const subjectSelectors = ['.hP', 'h2.hP', '.ha h2', 'h1', 'h2'];
   for (const sel of subjectSelectors) {
     try {
-      // Prefer scoped to pane; fall back to document if pane not found
-      const root = pane || document;
       const el = root.querySelector(sel);
-      if (el && el.textContent.trim()) {
-        subject = el.textContent.trim().replace(/\s*\(\d+\)\s*$/, '').trim();
+      const txt = (el && el.textContent ? el.textContent.trim() : '');
+      if (txt) {
+        subject = txt.replace(/\s*\(\d+\)\s*$/, '').trim();
         break;
       }
     } catch (_) {}
   }
 
-  // ---- Sender ----
-  // .gD inside [data-expanded="true"] = the sender span of the expanded message.
-  // Gmail sets a 'name' attribute on .gD with the display name.
+  let senderName = '';
+  let senderEmail = '';
   const senderSelectors = [
     '[data-expanded="true"] .gD',
     '[data-expanded="true"] [email]',
-    '.aqJ .gD',        // expanded message header cell
-    '.adn.ads .gD',    // another expanded state class
-    '.gD[name]',       // any .gD with explicit name attr
-    '.gD[email]',      // any .gD with email attr
+    '.aqJ .gD',
+    '.adn.ads .gD',
+    '.gD[name]',
+    '.gD[email]',
   ];
   for (const sel of senderSelectors) {
     try {
-      const root = pane || document;
       const el = root.querySelector(sel);
-      if (el) {
-        const nameAttr = el.getAttribute('name') || el.getAttribute('data-name');
-        const txt = nameAttr ? nameAttr.trim() : el.textContent.trim();
-        // Reject bare email addresses as the display name (use as last resort)
-        if (txt && txt.length > 1 && !txt.includes('@')) { sender = txt; break; }
-        if (txt && txt.length > 1 && !sender) { sender = txt; } // email addr fallback
+      if (!el) continue;
+
+      const nameAttr = cleanEmailDisplayName(el.getAttribute('name') || el.getAttribute('data-name') || '');
+      const emailAttr = String(el.getAttribute('email') || '').trim().toLowerCase();
+      const text = (el.textContent || '').trim();
+
+      if (!senderEmail) senderEmail = emailAttr || extractEmailAddress(text) || extractEmailAddress(nameAttr);
+
+      const candidateName = nameAttr || cleanEmailDisplayName(text);
+      if (candidateName && !candidateName.includes('@')) {
+        senderName = candidateName;
+        break;
       }
+      if (!senderName && candidateName) senderName = candidateName;
     } catch (_) {}
   }
 
-  // ---- Fallback: document.title ────────────────────────────────────────────
-  // Gmail sets title to "Subject - me@gmail.com - Gmail" when a thread is open,
-  // and "Inbox (5) - me@gmail.com - Gmail" when it's not.
   if (!subject) {
     const stripped = document.title
       .replace(/ - Gmail$/, '')
-      .replace(/ - [^-]+@[^-]+(\.\w+)+$/, '') // remove "- email@domain" suffix
+      .replace(/ - [^-]+@[^-]+(\.\w+)+$/, '')
       .trim();
     const genericLabels = /^(Inbox|Sent|Drafts|Spam|Trash|Starred|Snoozed|All Mail|Important)/i;
     if (stripped && !genericLabels.test(stripped)) {
@@ -1128,9 +1140,89 @@ function extractGmailName() {
     }
   }
 
-  if (sender && subject) return `${sender} — ${subject}`;
-  if (subject) return subject;
-  if (sender)  return sender;
+  if (!senderEmail && senderName) senderEmail = extractEmailAddress(senderName);
+  senderName = cleanEmailDisplayName(senderName);
+  return { senderName, senderEmail, subject };
+}
+
+function parseOutlookContactInfo() {
+  let senderName = '';
+  let senderEmail = '';
+  let subject = '';
+
+  const senderSelectors = [
+    '[data-testid="senderName"]',
+    '[data-testid="sender"]',
+    '.ms-Persona-primaryText',
+    '.allowTextSelection [data-testid="sender"] span',
+    '.oMY5O',
+    '.RPcS5b',
+    '.UHiM0',
+  ];
+  for (const sel of senderSelectors) {
+    try {
+      const el = document.querySelector(sel);
+      if (!el) continue;
+      const txt = (el.textContent || '').trim();
+      if (!txt) continue;
+
+      if (!senderEmail) senderEmail = extractEmailAddress(txt);
+      const cleaned = cleanEmailDisplayName(txt);
+      if (cleaned && cleaned.length > 1) {
+        senderName = cleaned;
+        break;
+      }
+    } catch (_) {}
+  }
+
+  // Some Outlook builds expose sender email separately in data attributes.
+  if (!senderEmail) {
+    try {
+      const emailCarrier = document.querySelector('[data-testid="sender"] [title*="@"], [title*="@"]');
+      if (emailCarrier) {
+        senderEmail = extractEmailAddress(emailCarrier.getAttribute('title') || emailCarrier.textContent || '');
+      }
+    } catch (_) {}
+  }
+
+  const subjectSelectors = [
+    '[data-testid="subject"]',
+    '.OZZZK',
+    '.ovuGFd',
+    '[aria-label*="Subject"] span',
+    'h1[role="heading"]',
+    'h2[role="heading"]',
+  ];
+  for (const sel of subjectSelectors) {
+    try {
+      const el = document.querySelector(sel);
+      const txt = (el && el.textContent ? el.textContent.trim() : '');
+      if (txt.length > 1) {
+        subject = txt;
+        break;
+      }
+    } catch (_) {}
+  }
+
+  if (!subject) {
+    const stripped = document.title
+      .replace(/ - (Outlook|Microsoft 365|Mail).*$/, '')
+      .trim();
+    const genericLabels = /^(Inbox|Sent Items|Drafts|Junk Email|Deleted Items|Archive|Calendar|People|Tasks)/i;
+    if (stripped && !genericLabels.test(stripped)) {
+      subject = stripped;
+    }
+  }
+
+  senderName = cleanEmailDisplayName(senderName);
+  return { senderName, senderEmail, subject };
+}
+
+// ---- Gmail ----
+function extractGmailName() {
+  const info = parseGmailContactInfo();
+  if (info.senderName) return info.senderName;
+  if (info.subject) return 'Unknown Contact';
   return 'Open an email first';
 }
 
@@ -1159,58 +1251,9 @@ function getGmailReadingPane() {
 
 // ---- Outlook Web ----
 function extractOutlookName() {
-  let sender = '';
-  let subject = '';
-
-  // Sender
-  const senderSelectors = [
-    '[data-testid="senderName"]',
-    '.ms-Persona-primaryText',
-    '.allowTextSelection [data-testid="sender"] span',
-    '.oMY5O',    // OWA sender name class (varies)
-    '.RPcS5b',
-    '.UHiM0',
-  ];
-  for (const sel of senderSelectors) {
-    try {
-      const el = document.querySelector(sel);
-      if (el && el.textContent.trim().length > 1) { sender = el.textContent.trim(); break; }
-    } catch (_) {}
-  }
-
-  // Subject
-  const subjectSelectors = [
-    '[data-testid="subject"]',
-    '.OZZZK',    // Outlook subject in reading pane
-    '.ovuGFd',
-    '[aria-label*="Subject"] span',
-    'h1[role="heading"]',
-    'h2[role="heading"]',
-  ];
-  for (const sel of subjectSelectors) {
-    try {
-      const el = document.querySelector(sel);
-      if (el && el.textContent.trim().length > 1) { subject = el.textContent.trim(); break; }
-    } catch (_) {}
-  }
-
-  // Fallback: document.title
-  // Outlook title formats:
-  //   "Re: Subject - Outlook"     ← email open
-  //   "Inbox - Outlook"           ← no email open
-  if (!sender && !subject) {
-    const stripped = document.title
-      .replace(/ - (Outlook|Microsoft 365|Mail).*$/, '')
-      .trim();
-    const genericLabels = /^(Inbox|Sent Items|Drafts|Junk Email|Deleted Items|Archive|Calendar|People|Tasks)/i;
-    if (stripped && !genericLabels.test(stripped)) {
-      subject = stripped;
-    }
-  }
-
-  if (sender && subject) return `${sender} — ${subject}`;
-  if (sender)  return sender;
-  if (subject) return subject;
+  const info = parseOutlookContactInfo();
+  if (info.senderName) return info.senderName;
+  if (info.subject) return 'Unknown Contact';
   return 'Open an email first'; // sentinel — triggers warning toast
 }
 
@@ -1413,9 +1456,23 @@ async function openModal(contactName, threadUrl, platform, prefillDescription) {
   header.append(title, sourceBadge, closeBtn);
 
   // ---- First Name / Last Name (CRM) ----
+  let emailPrefill = '';
+  let titlePrefill = extractContactTitle(platform);
+
+  if (platform === 'gmail') {
+    const info = parseGmailContactInfo();
+    if (info.senderName) contactName = info.senderName;
+    if (info.senderEmail) emailPrefill = info.senderEmail;
+    if (info.subject) titlePrefill = info.subject;
+  } else if (platform === 'outlook') {
+    const info = parseOutlookContactInfo();
+    if (info.senderName) contactName = info.senderName;
+    if (info.senderEmail) emailPrefill = info.senderEmail;
+    if (info.subject) titlePrefill = info.subject;
+  }
+
   const parsed = parseContactName(contactName);
   const profileUrl = platform === 'linkedin' ? extractLinkedInProfileUrl() : '';
-  const contactTitle = extractContactTitle(platform);
 
   const nameRow = document.createElement('div');
   nameRow.className = 'lts-field-group lts-name-row';
@@ -1463,7 +1520,7 @@ async function openModal(contactName, threadUrl, platform, prefillDescription) {
   titleInput.type = 'text';
   titleInput.id = 'lts-title';
   titleInput.className = 'lts-input';
-  titleInput.value = contactTitle;
+  titleInput.value = titlePrefill;
   titleInput.placeholder = 'e.g. CEO at Acme Corp';
 
   titleRow.append(titleLabel, titleInput);
@@ -1498,6 +1555,7 @@ async function openModal(contactName, threadUrl, platform, prefillDescription) {
   emailInput.type = 'email';
   emailInput.id = 'lts-email';
   emailInput.className = 'lts-input';
+  emailInput.value = emailPrefill;
   emailInput.placeholder = 'name@company.com (optional)';
 
   emailRow.append(emailLabel, emailInput);

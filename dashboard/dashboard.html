@@ -58,9 +58,9 @@
         <span class="nav-btn__label">This Week</span>
         <span class="nav-btn__count" id="count-thisweek">0</span>
       </button>
-      <button class="nav-btn" data-tab="customers">
+      <button class="nav-btn" data-tab="contacts">
         <span class="nav-btn__icon">👥</span>
-        <span class="nav-btn__label">All Customers</span>
+        <span class="nav-btn__label">Contacts</span>
       </button>
 
       <p class="nav-section-label" style="margin-top:12px;">Status</p>
@@ -108,10 +108,10 @@
         <h1 class="main__title" id="page-title">Dashboard</h1>
         <span class="main__subtitle" id="page-subtitle"></span>
       </div>
-      <div class="main__header-right">
+      <!-- <div class="main__header-right">
         <input type="search" id="search-input" class="search-input" placeholder="Search tasks or customers..." />
         <button id="new-task-btn" class="new-task-btn">+ New Task</button>
-      </div>
+      </div> -->
     </header>
 
     <!-- ========== Dashboard overview (default) ========== -->
@@ -203,10 +203,10 @@
       </div>
     </section>
 
-    <!-- ========== Customers ========== -->
+    <!-- ========== Contacts ========== -->
     <section id="tab-customers" class="tab-panel" hidden>
       <div class="tasks-toolbar">
-        <input type="search" id="customer-search" class="search-input" placeholder="Search customers..." />
+        <input type="search" id="customer-search" class="search-input" placeholder="Search contacts..." />
         <div class="view-toggle" role="group">
           <button class="view-btn view-btn--active" id="cust-view-cards" title="Card view">⊞</button>
           <button class="view-btn" id="cust-view-table" title="Table view">☰</button>
@@ -221,8 +221,8 @@
       </div>
       <div id="customer-empty" class="empty-state" hidden>
         <div class="empty-state__icon">👥</div>
-        <p class="empty-state__title">No customers yet</p>
-        <p class="empty-state__sub">Save a task from LinkedIn to add your first customer.</p>
+        <p class="empty-state__title">No contacts yet</p>
+        <p class="empty-state__sub">Save a task or add a team contact first.</p>
       </div>
     </section>
 

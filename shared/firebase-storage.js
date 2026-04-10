@@ -879,6 +879,68 @@
       }));
   }
 
+  async function listTeamContacts(limit) {
+    const identity = await resolveIdentity();
+    if (identity.mode !== 'user' || !hasFirestoreConfig()) return [];
+
+    const teamId = await resolveTeamId(identity);
+    if (!teamId) return [];
+
+    const max = Math.max(1, Math.min(Number(limit) || 500, 1000));
+    const all = await listCollectionAtPath(`teams/${teamId}/contacts`, identity.idToken).catch(() => []);
+
+    return all
+      .sort((a, b) => {
+        const aTs = Number(a.updatedAt || a.createdAt || 0);
+        const bTs = Number(b.updatedAt || b.createdAt || 0);
+        return bTs - aTs;
+      })
+      .slice(0, max)
+      .map((c) => ({
+        id: c.id,
+        name: String(c.name || ''),
+        firstName: String(c.firstName || ''),
+        lastName: String(c.lastName || ''),
+        linkedinUrl: String(c.linkedinUrl || ''),
+        email: String(c.email || ''),
+        phone: String(c.phone || ''),
+        company: String(c.company || ''),
+        designation: String(c.designation || ''),
+        createdAt: Number(c.createdAt || 0),
+        updatedAt: Number(c.updatedAt || 0),
+      }));
+  }
+
+  async function updateTeamContact(contactId, fields) {
+    const identity = await resolveIdentity();
+    if (identity.mode !== 'user' || !hasFirestoreConfig()) return null;
+
+    const teamId = await resolveTeamId(identity);
+    if (!teamId || !contactId) return null;
+
+    const path = `teams/${teamId}/contacts/${contactId}`;
+    const existing = await readDocAtPath(path, identity.idToken);
+    if (!existing) throw new Error('CONTACT_NOT_FOUND');
+
+    const incoming = (fields && typeof fields === 'object') ? fields : {};
+    const safe = {
+      name: String(incoming.name ?? existing.name ?? '').trim(),
+      firstName: String(incoming.firstName ?? existing.firstName ?? '').trim(),
+      lastName: String(incoming.lastName ?? existing.lastName ?? '').trim(),
+      linkedinUrl: String(incoming.linkedinUrl ?? existing.linkedinUrl ?? '').trim(),
+      email: String(incoming.email ?? existing.email ?? '').trim().toLowerCase(),
+      phone: String(incoming.phone ?? existing.phone ?? '').trim(),
+      company: String(incoming.company ?? existing.company ?? '').trim(),
+      designation: String(incoming.designation ?? existing.designation ?? '').trim(),
+      createdAt: existing.createdAt ? new Date(existing.createdAt) : new Date(),
+      updatedAt: new Date(),
+      addedBy: existing.addedBy || identity.authUid,
+    };
+
+    await writeDocAtPath(path, identity.idToken, safe);
+    return { id: String(contactId), teamId };
+  }
+
   async function getTaskDocs(collectionPath, idToken) {
     const docs = await listCollectionAtPath(collectionPath, idToken);
     return docs.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
@@ -1330,6 +1392,8 @@
     removeTask,
     ensureTeamContact,
     searchTeamContacts,
+    listTeamContacts,
+    updateTeamContact,
     getSettings,
     setSettings,
     postSignIn,

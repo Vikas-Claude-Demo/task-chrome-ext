@@ -104,6 +104,7 @@ async function ensureSingleOwnerSettings(email, preferredId) {
 async function provisionUserAndTeam(userId, idToken, name, email, teamCode) {
   const cloud = window.TaskSaverCloud;
   let teamId, role;
+  let existingMembers = [];
 
   const trimmedCode = (teamCode || '').trim().toUpperCase();
   if (trimmedCode) {
@@ -111,17 +112,23 @@ async function provisionUserAndTeam(userId, idToken, name, email, teamCode) {
     if (!found) throw new Error('TEAM_NOT_FOUND');
     teamId = found.teamId;
     role   = 'member';
-
-    // Add to subcollection (includes name/email so display works without cross-user reads)
-    await cloud.addTeamMember(teamId, userId, idToken, { userId, role, name, email });
-    // Update members array on team doc using a field-masked PATCH (satisfies self-join rule)
-    const existingMembers = Array.isArray(found.members) ? found.members : [];
-    if (!existingMembers.includes(userId)) {
-      await cloud.updateTeamMembersArray(teamId, idToken, [...existingMembers, userId]);
-    }
+    existingMembers = Array.isArray(found.members) ? found.members : [];
   } else {
     teamId = `team_${userId}`;
     role   = 'admin';
+  }
+
+  // Create user profile first so isTeamMember(teamId) can pass via userTeamId() during join.
+  await cloud.createUserProfile(userId, idToken, { name, email, teamId, role });
+
+  if (trimmedCode) {
+    // Update members array on team doc first (self-join rule allows adding your own uid).
+    if (!existingMembers.includes(userId)) {
+      await cloud.updateTeamMembersArray(teamId, idToken, [...existingMembers, userId]);
+    }
+    // Then write member subdocument with profile details.
+    await cloud.addTeamMember(teamId, userId, idToken, { userId, role, name, email });
+  } else {
     const generatedCode = cloud.generateTeamCode();
     const teamName      = name ? `${name}'s Team` : 'My Team';
 
@@ -134,8 +141,6 @@ async function provisionUserAndTeam(userId, idToken, name, email, teamCode) {
     await cloud.seedDefaultTeamStages(teamId, idToken, userId);
     await cloud.addTeamMember(teamId, userId, idToken, { userId, role, name, email });
   }
-
-  await cloud.createUserProfile(userId, idToken, { name, email, teamId, role });
 }
 
 async function handleAuthSubmit(e) {

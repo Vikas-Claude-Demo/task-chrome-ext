@@ -49,3 +49,11 @@ A log of key technical decisions made during this project. Append new entries â€
 **Decision:** Store CRM settings as team subcollections: `teams/{teamId}/owners/{ownerId}` and `teams/{teamId}/stages/{stageId}`.
 **Reason:** Team settings become shared, queryable entities with metadata (`createdAt`, `createdBy`) and can be maintained independently of profile settings blobs.
 **Alternatives considered:** Storing owners/stages in profile `settings` map (not team-shared by default and harder to audit per-record metadata).
+
+---
+
+## 2026-04-10 â€” Dashboard contacts tab uses team contacts with inline edit
+
+**Decision:** Use a dedicated dashboard Contacts tab (`data-tab="contacts"`) backed by Firestore `teams/{teamId}/contacts`, with list + edit flow in-dashboard.
+**Reason:** Contacts should be team-shared records independent from task rows, and users need direct editing of email, phone, company, designation, and LinkedIn URL.
+**Alternatives considered:** Deriving contacts only from tasks (misses team contact records and makes edits non-persistent), separate contacts management page (more navigation friction).

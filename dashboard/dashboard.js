@@ -103,13 +103,14 @@ let _authMode = 'signin';
 let _listenersSetup = false;
 let _lockListenersSetup = false;
 
-let currentTab = 'dashboard';       // 'dashboard' | 'customers' | 'tasks'
+let currentTab = 'dashboard';       // 'dashboard' | 'contacts' | 'tasks'
 let currentTaskFilter = 'all';      // sub-filter within Tasks tab: 'all' | 'pending' | 'overdue' | 'completed'
 let currentSort = 'remindAt-asc';
 let searchQuery = '';
 let customerSearchQuery = '';
 let customerView = 'cards';          // 'cards' | 'table'
 let cachedAllTasks = [];
+let cachedTeamContacts = [];
 let currentView = 'table'; // 'cards' | 'table'
 let currentOwnerFilter = 'all'; // 'all' | owner id
 
@@ -281,6 +282,7 @@ function toggleAuthMode() {
 async function provisionUserAndTeam(userId, idToken, name, email, teamCode) {
   const cloud = window.TaskSaverCloud;
   let teamId, role;
+  let existingMembers = [];
 
   const trimmedCode = (teamCode || '').trim().toUpperCase();
   if (trimmedCode) {
@@ -289,18 +291,23 @@ async function provisionUserAndTeam(userId, idToken, name, email, teamCode) {
     if (!found) throw new Error('TEAM_NOT_FOUND');
     teamId = found.teamId;
     role   = 'member';
-
-    // Add to subcollection (includes name/email so display works without cross-user reads)
-    await cloud.addTeamMember(teamId, userId, idToken, { userId, role, name, email });
-    // Update members array on team doc using a field-masked PATCH (satisfies self-join rule)
-    const existingMembers = Array.isArray(found.members) ? found.members : [];
-    if (!existingMembers.includes(userId)) {
-      await cloud.updateTeamMembersArray(teamId, idToken, [...existingMembers, userId]);
-    }
+    existingMembers = Array.isArray(found.members) ? found.members : [];
   } else {
     // Create a new team with the user as owner
     teamId = `team_${userId}`;
     role   = 'admin';
+  }
+
+  // Create user profile first so isTeamMember(teamId) can pass via userTeamId() during join.
+  await cloud.createUserProfile(userId, idToken, { name, email, teamId, role });
+
+  if (trimmedCode) {
+    // Update members array first (self-join rule), then write member subdocument.
+    if (!existingMembers.includes(userId)) {
+      await cloud.updateTeamMembersArray(teamId, idToken, [...existingMembers, userId]);
+    }
+    await cloud.addTeamMember(teamId, userId, idToken, { userId, role, name, email });
+  } else {
     const generatedCode = cloud.generateTeamCode();
     const teamName      = name ? `${name}'s Team` : 'My Team';
 
@@ -313,8 +320,6 @@ async function provisionUserAndTeam(userId, idToken, name, email, teamCode) {
     await cloud.seedDefaultTeamStages(teamId, idToken, userId);
     await cloud.addTeamMember(teamId, userId, idToken, { userId, role, name, email });
   }
-
-  await cloud.createUserProfile(userId, idToken, { name, email, teamId, role });
 }
 
 async function handleLogin(e) {
@@ -401,8 +406,10 @@ async function initApp() {
 
     // Close any open stage dropdown when clicking outside
     document.addEventListener('click', () => {
-      document.querySelectorAll('.stage-dropdown--open').forEach(d => d.classList.remove('stage-dropdown--open'));
+      closeAllStageDropdowns();
     });
+    window.addEventListener('scroll', closeAllStageDropdowns, true);
+    window.addEventListener('resize', closeAllStageDropdowns);
 
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === 'local' && changes.tasks) renderAll();
@@ -654,7 +661,12 @@ async function handleAuthModalLogin(e) {
 // ===== Main render =====
 
 async function renderAll() {
-  cachedAllTasks = await cloudStore.getTasks();
+  const [tasks, contacts] = await Promise.all([
+    cloudStore.getTasks(),
+    (cloudStore.listTeamContacts ? cloudStore.listTeamContacts(500) : Promise.resolve([])).catch(() => []),
+  ]);
+  cachedAllTasks = Array.isArray(tasks) ? tasks : [];
+  cachedTeamContacts = Array.isArray(contacts) ? contacts : [];
   showTab(currentTab);
 }
 
@@ -702,7 +714,7 @@ function setupTabs() {
 function showTab(tab) {
   // Map sidebar tabs to panel IDs
   const taskListTabs = new Set(['today', 'thisweek', 'pending', 'overdue', 'completed']);
-  const panelTab = taskListTabs.has(tab) ? 'tasks' : tab;
+  const panelTab = taskListTabs.has(tab) ? 'tasks' : (tab === 'contacts' ? 'customers' : tab);
 
   document.querySelectorAll('.tab-panel').forEach(p => {
     p.hidden = true;
@@ -718,7 +730,7 @@ function showTab(tab) {
   updateSidebarCounts(cachedAllTasks);
 
   // Update header title
-  const titles = { dashboard: 'Dashboard', customers: 'Customers', today: 'Today', thisweek: 'This Week', pending: 'Pending', overdue: 'Overdue', completed: 'Completed' };
+  const titles = { dashboard: 'Dashboard', contacts: 'Contacts', customers: 'Contacts', today: 'Today', thisweek: 'This Week', pending: 'Pending', overdue: 'Overdue', completed: 'Completed' };
   const titleEl = document.getElementById('page-title');
   if (titleEl) titleEl.textContent = titles[tab] || 'Tasks';
 
@@ -728,8 +740,8 @@ function showTab(tab) {
   if (tab === 'dashboard') {
     if (subtitleEl) subtitleEl.textContent = `${dateStr} — ${cachedAllTasks.length} tasks across ${new Set(cachedAllTasks.map(t => (t.contactName || '').toLowerCase()).filter(Boolean)).size} customers`;
     renderDashboardTab(cachedAllTasks);
-  } else if (tab === 'customers') {
-    renderCustomersTab(cachedAllTasks);
+  } else if (tab === 'contacts' || tab === 'customers') {
+    renderCustomersTab(cachedAllTasks, cachedTeamContacts);
   } else if (taskListTabs.has(tab)) {
     currentTaskFilter = tab === 'today' ? 'today' : tab === 'thisweek' ? 'thisweek' : tab;
     renderTasks(cachedAllTasks);
@@ -898,41 +910,102 @@ function escapeHtml(str) {
 }
 
 // ===== Customers tab =====
-function renderCustomersTab(allTasks) {
+function renderCustomersTab(allTasks, teamContacts) {
   const contactMap = new Map();
 
+  const withTaskStats = (base) => {
+    const displayName = (base.displayName || '').trim() || [base.firstName || '', base.lastName || ''].join(' ').trim() || base.contactName || 'Unknown';
+    const firstName = String(base.firstName || '').trim();
+    const lastName = String(base.lastName || '').trim();
+    const contactName = String(base.contactName || displayName).trim() || displayName;
+    const matches = allTasks.filter((t) => {
+      const tName = String(t.contactName || '').trim().toLowerCase();
+      if (tName && tName === contactName.toLowerCase()) return true;
+      const tEmail = String(t.email || (t.contact && t.contact.email) || '').trim().toLowerCase();
+      const cEmail = String(base.email || '').trim().toLowerCase();
+      return !!(tEmail && cEmail && tEmail === cEmail);
+    });
+
+    const sorted = matches.slice().sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+    const latest = sorted[0] || null;
+
+    return {
+      id: base.id || '',
+      displayName,
+      contactName,
+      firstName,
+      lastName,
+      title: String(base.title || base.designation || '').trim(),
+      company: String(base.company || '').trim(),
+      profileUrl: String(base.profileUrl || base.linkedinUrl || '').trim(),
+      email: String(base.email || '').trim().toLowerCase(),
+      phone: String(base.phone || '').trim(),
+      tasks: sorted,
+      lastInteraction: latest ? Number(latest.createdAt || latest.updatedAt || 0) : Number(base.updatedAt || base.createdAt || 0),
+      currentStage: latest ? latest.stage : null,
+    };
+  };
+
+  // Seed from team contacts collection first.
+  (Array.isArray(teamContacts) ? teamContacts : []).forEach((c) => {
+    const displayName = [c.firstName || '', c.lastName || ''].join(' ').trim() || c.name || 'Unknown';
+    const key = `id:${String(c.id || '')}`;
+    contactMap.set(key, withTaskStats({
+      id: c.id,
+      displayName,
+      contactName: c.name || displayName,
+      firstName: c.firstName || '',
+      lastName: c.lastName || '',
+      title: c.designation || '',
+      company: c.company || '',
+      profileUrl: c.linkedinUrl || '',
+      email: c.email || '',
+      phone: c.phone || '',
+      createdAt: c.createdAt || 0,
+      updatedAt: c.updatedAt || 0,
+    }));
+  });
+
+  // Include task-derived contacts not present in team contacts.
   allTasks.forEach(task => {
-    const key = (task.contactName || 'Unknown').toLowerCase();
-    if (!contactMap.has(key)) {
-      const displayName = (task.firstName || task.lastName)
-        ? `${task.firstName || ''} ${task.lastName || ''}`.trim()
-        : (task.contactName || 'Unknown');
-      contactMap.set(key, {
-        displayName,
-        contactName: task.contactName || 'Unknown',
-        title: task.title || '',
-        profileUrl: task.profileUrl || '',
-        platform: task.platform || '',
-        tasks: [],
-        lastInteraction: 0,
-        currentStage: null,
-      });
-    }
-    const entry = contactMap.get(key);
-    entry.tasks.push(task);
-    if (task.profileUrl && !entry.profileUrl) entry.profileUrl = task.profileUrl;
-    if (task.title && !entry.title) entry.title = task.title;
-    if (task.createdAt > entry.lastInteraction) {
-      entry.lastInteraction = task.createdAt;
-      entry.currentStage = task.stage;
-    }
+    const taskName = (task.firstName || task.lastName)
+      ? `${task.firstName || ''} ${task.lastName || ''}`.trim()
+      : (task.contactName || 'Unknown');
+    const taskEmail = String(task.email || (task.contact && task.contact.email) || '').trim().toLowerCase();
+    const fallbackKey = taskEmail ? `email:${taskEmail}` : `name:${String(task.contactName || taskName || 'unknown').toLowerCase()}`;
+
+    const already = [...contactMap.values()].find((x) => {
+      if (taskEmail && x.email && x.email === taskEmail) return true;
+      return x.contactName.toLowerCase() === String(task.contactName || taskName || '').toLowerCase();
+    });
+    if (already) return;
+
+    contactMap.set(fallbackKey, withTaskStats({
+      id: '',
+      displayName: taskName,
+      contactName: task.contactName || taskName,
+      firstName: task.firstName || '',
+      lastName: task.lastName || '',
+      title: task.title || '',
+      company: '',
+      profileUrl: task.profileUrl || '',
+      email: taskEmail,
+      phone: '',
+      createdAt: task.createdAt || 0,
+      updatedAt: task.updatedAt || 0,
+    }));
   });
 
   let customers = [...contactMap.values()];
 
   if (customerSearchQuery) {
     const q = customerSearchQuery.toLowerCase();
-    customers = customers.filter(c => c.displayName.toLowerCase().includes(q));
+    customers = customers.filter(c => {
+      return c.displayName.toLowerCase().includes(q)
+        || c.email.includes(q)
+        || c.company.toLowerCase().includes(q)
+        || c.title.toLowerCase().includes(q);
+    });
   }
 
   customers.sort((a, b) => b.lastInteraction - a.lastInteraction);
@@ -973,7 +1046,7 @@ function renderCustomerTable(customers, allTasks) {
   thead.innerHTML = '';
   tbody.innerHTML = '';
 
-  ['Name', 'Title', 'Tasks', 'Pending', 'Stage', 'Last Activity', 'Profile', 'Actions'].forEach(h => {
+  ['Name', 'Title', 'Email', 'Tasks', 'Pending', 'Stage', 'Last Activity', 'Profile', 'Actions'].forEach(h => {
     const th = document.createElement('th');
     th.textContent = h;
     thead.appendChild(th);
@@ -1009,6 +1082,10 @@ function renderCustomerTable(customers, allTasks) {
     tdTitle.style.textOverflow = 'ellipsis';
     tdTitle.style.whiteSpace = 'nowrap';
     tdTitle.title = customer.title || '';
+
+    // Email
+    const tdEmail = document.createElement('td');
+    tdEmail.textContent = customer.email || '—';
 
     // Tasks count
     const tdTasks = document.createElement('td');
@@ -1060,7 +1137,14 @@ function renderCustomerTable(customers, allTasks) {
     tlBtn.addEventListener('click', () => openTimeline(customer.contactName, allTasks));
     tdActions.appendChild(tlBtn);
 
-    tr.append(tdName, tdTitle, tdTasks, tdPending, tdStage, tdActivity, tdProfile, tdActions);
+    const editBtn = document.createElement('button');
+    editBtn.className = 'tbl-btn';
+    editBtn.textContent = '✎';
+    editBtn.title = 'Edit contact';
+    editBtn.addEventListener('click', () => openContactEditModal(customer));
+    tdActions.appendChild(editBtn);
+
+    tr.append(tdName, tdTitle, tdEmail, tdTasks, tdPending, tdStage, tdActivity, tdProfile, tdActions);
     tbody.appendChild(tr);
   });
 }
@@ -1125,6 +1209,20 @@ function buildCustomerCard(customer, allTasks) {
 
   card.appendChild(stats);
 
+  const actions = document.createElement('div');
+  actions.className = 'customer-card__stats';
+  const editBtn = document.createElement('button');
+  editBtn.type = 'button';
+  editBtn.className = 'tbl-btn';
+  editBtn.textContent = '✎';
+  editBtn.title = 'Edit contact';
+  editBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openContactEditModal(customer);
+  });
+  actions.appendChild(editBtn);
+  card.appendChild(actions);
+
   // Stage badge
   if (stage) {
     const badge = document.createElement('span');
@@ -1137,6 +1235,111 @@ function buildCustomerCard(customer, allTasks) {
   }
 
   return card;
+}
+
+function openContactEditModal(contact) {
+  const existing = document.getElementById('contact-edit-overlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'contact-edit-overlay';
+  overlay.className = 'settings-overlay';
+
+  const modal = document.createElement('div');
+  modal.className = 'settings-modal';
+  modal.style.width = '520px';
+
+  const header = document.createElement('div');
+  header.className = 'settings-modal__header';
+  header.innerHTML = `<h2 class="settings-modal__title">Edit Contact</h2>`;
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'settings-modal__close';
+  closeBtn.innerHTML = '&#x2715;';
+  closeBtn.addEventListener('click', () => overlay.remove());
+  header.appendChild(closeBtn);
+
+  const panel = document.createElement('div');
+  panel.className = 'settings-panel';
+
+  const mkField = (label, id, value, type = 'text') => {
+    const row = document.createElement('div');
+    row.className = 'settings-row';
+    row.style.display = 'block';
+
+    const l = document.createElement('label');
+    l.className = 'settings-label';
+    l.textContent = label;
+    l.htmlFor = id;
+
+    const i = document.createElement('input');
+    i.id = id;
+    i.type = type;
+    i.className = 'settings-input';
+    i.value = value || '';
+    i.style.width = '100%';
+
+    row.append(l, i);
+    return row;
+  };
+
+  panel.append(
+    mkField('First Name', 'ce-first', contact.firstName || ''),
+    mkField('Last Name', 'ce-last', contact.lastName || ''),
+    mkField('Email', 'ce-email', contact.email || '', 'email'),
+    mkField('Phone', 'ce-phone', contact.phone || ''),
+    mkField('Company', 'ce-company', contact.company || ''),
+    mkField('Designation', 'ce-designation', contact.title || ''),
+    mkField('LinkedIn URL', 'ce-linkedin', contact.profileUrl || '', 'url')
+  );
+
+  const footer = document.createElement('div');
+  footer.className = 'settings-modal__footer';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'settings-footer-btn settings-footer-btn--cancel';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.addEventListener('click', () => overlay.remove());
+
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'settings-footer-btn settings-footer-btn--save';
+  saveBtn.textContent = 'Save Contact';
+  saveBtn.addEventListener('click', async () => {
+    try {
+      const firstName = document.getElementById('ce-first').value.trim();
+      const lastName = document.getElementById('ce-last').value.trim();
+      const fullName = `${firstName} ${lastName}`.trim() || contact.displayName || contact.contactName;
+      const payload = {
+        name: fullName,
+        firstName,
+        lastName,
+        email: document.getElementById('ce-email').value.trim().toLowerCase(),
+        phone: document.getElementById('ce-phone').value.trim(),
+        company: document.getElementById('ce-company').value.trim(),
+        designation: document.getElementById('ce-designation').value.trim(),
+        linkedinUrl: document.getElementById('ce-linkedin').value.trim(),
+      };
+
+      if (contact.id && cloudStore.updateTeamContact) {
+        await cloudStore.updateTeamContact(contact.id, payload);
+      } else {
+        await cloudStore.ensureTeamContact(payload);
+      }
+
+      overlay.remove();
+      await renderAll();
+      showTab(currentTab);
+    } catch (err) {
+      alert('Could not update contact. Please try again.');
+      console.error('[dashboard] contact update failed', err);
+    }
+  });
+
+  footer.append(cancelBtn, saveBtn);
+  modal.append(header, panel, footer);
+  overlay.appendChild(modal);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
 }
 
 function setupTaskSubFilters() {
@@ -1155,7 +1358,7 @@ function setupCustomerSearch() {
   if (!el) return;
   el.addEventListener('input', (e) => {
     customerSearchQuery = e.target.value.trim();
-    renderCustomersTab(cachedAllTasks);
+    renderCustomersTab(cachedAllTasks, cachedTeamContacts);
   });
 }
 
@@ -1167,13 +1370,13 @@ function setupCustomerViewToggle() {
     customerView = 'cards';
     cardsBtn.classList.add('view-btn--active');
     tableBtn.classList.remove('view-btn--active');
-    renderCustomersTab(cachedAllTasks);
+    renderCustomersTab(cachedAllTasks, cachedTeamContacts);
   });
   tableBtn.addEventListener('click', () => {
     customerView = 'table';
     tableBtn.classList.add('view-btn--active');
     cardsBtn.classList.remove('view-btn--active');
-    renderCustomersTab(cachedAllTasks);
+    renderCustomersTab(cachedAllTasks, cachedTeamContacts);
   });
 }
 
@@ -1708,6 +1911,25 @@ function closeTimeline() {
 
 // ===== Stage badge =====
 
+function closeAllStageDropdowns() {
+  document.querySelectorAll('.stage-dropdown--open').forEach((dropdown) => {
+    dropdown.classList.remove('stage-dropdown--open');
+
+    if (dropdown.dataset.floating !== '1') return;
+
+    const hostId = dropdown.dataset.hostId;
+    const host = hostId ? document.querySelector(`[data-stage-host="${hostId}"]`) : null;
+    if (host) host.appendChild(dropdown);
+
+    dropdown.style.position = '';
+    dropdown.style.top = '';
+    dropdown.style.left = '';
+    dropdown.style.zIndex = '';
+    dropdown.dataset.floating = '';
+    dropdown.dataset.hostId = '';
+  });
+}
+
 function buildStageBadge(task) {
   const stage = getStage(task.stage);
 
@@ -1715,6 +1937,8 @@ function buildStageBadge(task) {
   wrapper.className = 'stage-badge-wrap';
   wrapper.style.position = 'relative';
   wrapper.style.display = 'inline-block';
+  const hostId = `stage_${task.id}_${Math.random().toString(36).slice(2, 7)}`;
+  wrapper.dataset.stageHost = hostId;
 
   const badge = document.createElement('button');
   badge.className = 'stage-badge';
@@ -1742,9 +1966,23 @@ function buildStageBadge(task) {
   badge.addEventListener('click', (e) => {
     e.stopPropagation();
     const isOpen = dropdown.classList.contains('stage-dropdown--open');
-    // Close all other open stage dropdowns first
-    document.querySelectorAll('.stage-dropdown--open').forEach(d => d.classList.remove('stage-dropdown--open'));
-    if (!isOpen) dropdown.classList.add('stage-dropdown--open');
+    closeAllStageDropdowns();
+    if (isOpen) return;
+
+    // Render in body with fixed positioning to avoid clipping inside table wrappers.
+    document.body.appendChild(dropdown);
+    dropdown.classList.add('stage-dropdown--open');
+    dropdown.dataset.floating = '1';
+    dropdown.dataset.hostId = hostId;
+    dropdown.style.position = 'fixed';
+    dropdown.style.zIndex = '12000';
+
+    const badgeRect = badge.getBoundingClientRect();
+    const ddRect = dropdown.getBoundingClientRect();
+    const safeLeft = Math.max(8, Math.min(badgeRect.left, window.innerWidth - ddRect.width - 8));
+    const safeTop = Math.max(8, Math.min(badgeRect.bottom + 4, window.innerHeight - ddRect.height - 8));
+    dropdown.style.left = `${safeLeft}px`;
+    dropdown.style.top = `${safeTop}px`;
   });
 
   wrapper.append(badge, dropdown);

@@ -1018,7 +1018,7 @@ body { display: flex; min-height: 100vh; }
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
-  z-index: 1000;
+  z-index: 10000;
   background: var(--white);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
@@ -1261,6 +1261,8 @@ body { display: flex; min-height: 100vh; }
 .task-table-wrap {
   padding: 0 28px 28px;
   overflow-x: auto;
+  position: relative;
+  z-index: 2;
 }
 
 .task-table {
@@ -1304,6 +1306,7 @@ body { display: flex; min-height: 100vh; }
   padding: 11px 14px;
   vertical-align: middle;
   color: var(--text-primary);
+  overflow: visible;
 }
 
 /* Contact cell */
