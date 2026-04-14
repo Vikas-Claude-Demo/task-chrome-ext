@@ -1101,6 +1101,19 @@ function parseGmailContactInfo() {
 
   let senderName = '';
   let senderEmail = '';
+  const toRecipients = [];
+  const seenRecipientKeys = new Set();
+
+  const addRecipient = (email, name) => {
+    const safeEmail = String(email || '').trim().toLowerCase();
+    if (!safeEmail) return;
+    if (safeEmail === senderEmail) return;
+    const safeName = cleanEmailDisplayName(name || '');
+    const key = `${safeEmail}|${safeName.toLowerCase()}`;
+    if (seenRecipientKeys.has(key)) return;
+    seenRecipientKeys.add(key);
+    toRecipients.push({ name: safeName, email: safeEmail });
+  };
   const senderSelectors = [
     '[data-expanded="true"] .gD',
     '[data-expanded="true"] [email]',
@@ -1129,6 +1142,42 @@ function parseGmailContactInfo() {
     } catch (_) {}
   }
 
+  const recipientSelectors = [
+    '[data-expanded="true"] .g2[email]',
+    '[data-expanded="true"] [email]:not(.gD)',
+    '.g2[email]',
+    '[email]:not(.gD)',
+    '[data-hovercard-id*="@"]',
+    'a[href^="mailto:"]',
+  ];
+
+  for (const sel of recipientSelectors) {
+    try {
+      const els = root.querySelectorAll(sel);
+      if (!els || els.length === 0) continue;
+
+      for (const el of els) {
+        const text = (el.textContent || '').trim();
+        const nameAttr = cleanEmailDisplayName(el.getAttribute('name') || el.getAttribute('data-name') || '');
+
+        const emailAttr = String(el.getAttribute('email') || '').trim().toLowerCase();
+        const hovercardEmail = String(el.getAttribute('data-hovercard-id') || '').trim().toLowerCase();
+        const href = String(el.getAttribute('href') || '').trim();
+        const hrefEmail = href.startsWith('mailto:') ? String(href.slice(7)).split('?')[0].trim().toLowerCase() : '';
+
+        const foundEmail = emailAttr
+          || (hovercardEmail.includes('@') ? hovercardEmail : '')
+          || hrefEmail
+          || extractEmailAddress(text)
+          || extractEmailAddress(nameAttr);
+
+        if (!foundEmail) continue;
+        const foundName = nameAttr || cleanEmailDisplayName(text);
+        addRecipient(foundEmail, foundName);
+      }
+    } catch (_) {}
+  }
+
   if (!subject) {
     const stripped = document.title
       .replace(/ - Gmail$/, '')
@@ -1142,7 +1191,26 @@ function parseGmailContactInfo() {
 
   if (!senderEmail && senderName) senderEmail = extractEmailAddress(senderName);
   senderName = cleanEmailDisplayName(senderName);
-  return { senderName, senderEmail, subject };
+
+  const sentView = /#(?:sent|sent\/|all\/)/i.test(location.href);
+  const uniqueRecipients = toRecipients.filter((r) => r && r.email && r.email !== senderEmail);
+  const primaryRecipient = uniqueRecipients[0] || toRecipients[0] || null;
+
+  const primaryName = sentView
+    ? String((primaryRecipient && primaryRecipient.name) || '').trim()
+    : senderName;
+  const primaryEmail = sentView
+    ? String((primaryRecipient && primaryRecipient.email) || '').trim().toLowerCase()
+    : senderEmail;
+
+  return {
+    senderName,
+    senderEmail,
+    toRecipients,
+    subject,
+    primaryName: cleanEmailDisplayName(primaryName || (sentView ? '' : senderName) || ''),
+    primaryEmail: String(primaryEmail || (sentView ? '' : senderEmail) || '').trim().toLowerCase(),
+  };
 }
 
 function parseOutlookContactInfo() {
@@ -1221,6 +1289,7 @@ function parseOutlookContactInfo() {
 // ---- Gmail ----
 function extractGmailName() {
   const info = parseGmailContactInfo();
+  if (info.primaryName) return info.primaryName;
   if (info.senderName) return info.senderName;
   if (info.subject) return 'Unknown Contact';
   return 'Open an email first';
@@ -1458,12 +1527,19 @@ async function openModal(contactName, threadUrl, platform, prefillDescription) {
   // ---- First Name / Last Name (CRM) ----
   let emailPrefill = '';
   let titlePrefill = extractContactTitle(platform);
+  let emailContext = null;
 
   if (platform === 'gmail') {
     const info = parseGmailContactInfo();
-    if (info.senderName) contactName = info.senderName;
-    if (info.senderEmail) emailPrefill = info.senderEmail;
+    if (info.primaryName) contactName = info.primaryName;
+    else if (info.senderName) contactName = info.senderName;
+    if (info.primaryEmail) emailPrefill = info.primaryEmail;
+    else if (info.senderEmail) emailPrefill = info.senderEmail;
     if (info.subject) titlePrefill = info.subject;
+    emailContext = {
+      from: info.senderEmail || '',
+      to: Array.isArray(info.toRecipients) ? info.toRecipients.map((r) => r.email).filter(Boolean) : [],
+    };
   } else if (platform === 'outlook') {
     const info = parseOutlookContactInfo();
     if (info.senderName) contactName = info.senderName;
@@ -1559,6 +1635,17 @@ async function openModal(contactName, threadUrl, platform, prefillDescription) {
   emailInput.placeholder = 'name@company.com (optional)';
 
   emailRow.append(emailLabel, emailInput);
+
+  if (platform === 'gmail' && emailContext && (emailContext.from || (emailContext.to && emailContext.to.length))) {
+    const emailMeta = document.createElement('p');
+    emailMeta.className = 'lts-reminder-preview';
+    const fromText = emailContext.from || 'unknown';
+    const toText = (emailContext.to && emailContext.to.length)
+      ? emailContext.to.join(', ')
+      : 'unknown';
+    emailMeta.textContent = `From: ${fromText} | To: ${toText}`;
+    emailRow.appendChild(emailMeta);
+  }
 
   // ---- Contact search (team contacts) ----
   const searchRow = document.createElement('div');
@@ -1661,6 +1748,50 @@ async function openModal(contactName, threadUrl, platform, prefillDescription) {
 
   // ---- Stage selector ----
   let selectedStage = 'prospect';
+
+  const owners = (_s && Array.isArray(_s.owners)) ? _s.owners : [];
+  let selectedOwner = 'owner_default';
+  try {
+    const ownerData = await chrome.storage.sync.get('currentOwner');
+    selectedOwner = ownerData.currentOwner || selectedOwner;
+  } catch (_) {}
+  if (owners.length === 1) {
+    selectedOwner = owners[0].id;
+  } else if (owners.length > 1 && !owners.find((o) => o.id === selectedOwner)) {
+    selectedOwner = owners[0].id;
+  }
+
+  let ownerRow = null;
+  if (owners.length > 1) {
+    ownerRow = document.createElement('div');
+    ownerRow.className = 'lts-field-group';
+
+    const ownerLabel = document.createElement('label');
+    ownerLabel.className = 'lts-field-label';
+    ownerLabel.textContent = 'Owner';
+    ownerLabel.htmlFor = 'lts-owner';
+
+    const ownerSelect = document.createElement('select');
+    ownerSelect.id = 'lts-owner';
+    ownerSelect.className = 'lts-input lts-stage-select';
+
+    owners.forEach((o) => {
+      const opt = document.createElement('option');
+      opt.value = o.id;
+      opt.textContent = o.label || o.id;
+      if (o.id === selectedOwner) opt.selected = true;
+      ownerSelect.appendChild(opt);
+    });
+
+    ownerSelect.addEventListener('change', () => {
+      selectedOwner = ownerSelect.value;
+      try {
+        chrome.storage.sync.set({ currentOwner: selectedOwner });
+      } catch (_) {}
+    });
+
+    ownerRow.append(ownerLabel, ownerSelect);
+  }
 
   const stageRow = document.createElement('div');
   stageRow.className = 'lts-field-group';
@@ -1818,11 +1949,13 @@ async function openModal(contactName, threadUrl, platform, prefillDescription) {
     const finalEmail = emailInput.value.trim();
     const finalTitle = titleInput.value.trim();
     const finalContactName = `${finalFirstName} ${finalLastName}`.trim() || contactName;
-    handleSave(finalContactName, threadUrl, descInput, selectedDays, errorEl, platform, selectedStage, finalFirstName, finalLastName, finalProfileUrl, finalEmail, finalTitle);
+    handleSave(finalContactName, threadUrl, descInput, selectedDays, errorEl, platform, selectedStage, finalFirstName, finalLastName, finalProfileUrl, finalEmail, finalTitle, selectedOwner, emailContext);
   });
 
   // ---- Assemble ----
-  modal.append(header, searchRow, nameRow, titleRow, profileRow, emailRow, stageRow, followupRow, descRow, errorEl, saveBtn);
+  modal.append(header, searchRow, nameRow, titleRow, profileRow, emailRow);
+  if (ownerRow) modal.appendChild(ownerRow);
+  modal.append(stageRow, followupRow, descRow, errorEl, saveBtn);
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
 
@@ -1860,7 +1993,7 @@ function showExtensionReloadToast(message) {
   }, 3500);
 }
 
-async function handleSave(contactName, threadUrl, descInput, selectedDays, errorEl, platform, stage, firstName, lastName, profileUrl, email, title) {
+async function handleSave(contactName, threadUrl, descInput, selectedDays, errorEl, platform, stage, firstName, lastName, profileUrl, email, title, selectedOwnerId, emailContext) {
   try {
     const description = descInput.value.trim();
     const remindAt = daysFromNow(selectedDays);
@@ -1868,12 +2001,14 @@ async function handleSave(contactName, threadUrl, descInput, selectedDays, error
     hideError(errorEl);
 
     // Read active owner from storage (set by popup owner switcher)
-    let owner = 'owner_default';
-    try {
-      const ownerData = await chrome.storage.sync.get('currentOwner');
-      owner = ownerData.currentOwner || 'owner_default';
-    } catch (_) {
-      owner = 'owner_default';
+    let owner = String(selectedOwnerId || '').trim() || 'owner_default';
+    if (!selectedOwnerId) {
+      try {
+        const ownerData = await chrome.storage.sync.get('currentOwner');
+        owner = ownerData.currentOwner || 'owner_default';
+      } catch (_) {
+        owner = 'owner_default';
+      }
     }
 
     // Validate selected owner against team owner docs/settings.
@@ -1881,7 +2016,9 @@ async function handleSave(contactName, threadUrl, descInput, selectedDays, error
     try {
       const settings = await cloudStore.getSettings();
       const owners = (settings && Array.isArray(settings.owners)) ? settings.owners : [];
-      if (owners.length > 0 && !owners.find((o) => o.id === owner)) {
+      if (owners.length === 1) {
+        owner = owners[0].id;
+      } else if (owners.length > 0 && !owners.find((o) => o.id === owner)) {
         owner = owners[0].id;
       }
     } catch (_) {
@@ -1894,6 +2031,10 @@ async function handleSave(contactName, threadUrl, descInput, selectedDays, error
 
     const now = new Date();
     const normalizedEmail = String(email || '').trim().toLowerCase();
+    const normalizedFromEmail = String((emailContext && emailContext.from) || '').trim().toLowerCase();
+    const normalizedToEmails = Array.isArray(emailContext && emailContext.to)
+      ? emailContext.to.map((v) => String(v || '').trim().toLowerCase()).filter(Boolean)
+      : [];
     const normalizedType = (
       platform === 'linkedin' ? 'linkedin'
         : (platform === 'gmail' || platform === 'outlook') ? 'email'
@@ -1936,6 +2077,8 @@ async function handleSave(contactName, threadUrl, descInput, selectedDays, error
       email: normalizedEmail,
       title: title || '',
       owner,
+      emailFrom: normalizedFromEmail,
+      emailTo: normalizedToEmails,
     };
 
     if (cloudStore && (platform === 'linkedin' || platform === 'gmail' || platform === 'outlook')) {

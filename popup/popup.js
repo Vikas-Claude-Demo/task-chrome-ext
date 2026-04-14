@@ -645,7 +645,7 @@ function buildTaskCard(task) {
 
   // Avatar
   const displayName = (task.firstName || task.lastName) ? `${task.firstName || ''} ${task.lastName || ''}`.trim() : (task.contactName || 'Unknown');
-  const initials = ((task.firstName || task.contactName || '?')[0] + (task.lastName || '')[0]).toUpperCase();
+  const initials = (String(task.firstName || task.contactName || '?').trim().charAt(0) || '?').toUpperCase();
 
   const avatar = document.createElement('span');
   avatar.className = 'task-card__avatar';

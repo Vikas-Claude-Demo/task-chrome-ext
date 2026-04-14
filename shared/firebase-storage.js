@@ -1132,49 +1132,92 @@
     const identity = await resolveIdentity();
     if (identity.mode !== 'user') return { ok: false, reason: 'NO_USER_IDENTITY' };
 
-    const [remote, guestLocal] = await Promise.all([
-      hasFirestoreConfig() ? readRemoteProfile(identity).catch(() => null) : null,
-      getGuestLocalData(),
-    ]);
+    const guestLocal = await getGuestLocalData();
 
-    const remoteData = {
-      tasks: Array.isArray(remote?.tasks) ? remote.tasks : [],
-      settings: remote?.settings || null,
-    };
+    let scope = null;
+    let remoteProfile = null;
+    let remoteTasks = [];
+    let remoteSettings = null;
+
+    if (hasFirestoreConfig()) {
+      scope = await resolveTaskScope(identity).catch(() => null);
+      if (scope) {
+        const remoteDocs = await getTaskDocs(scope.path, identity.idToken).catch(() => []);
+        remoteTasks = remoteDocs.map(toLegacyTaskView);
+        const teamId = await resolveTeamId(identity).catch(() => null);
+        if (teamId) {
+          remoteSettings = await readTeamSettings(teamId, identity).catch(() => null);
+        } else {
+          remoteProfile = await readRemoteProfile(identity).catch(() => null);
+          remoteSettings = remoteProfile?.settings || null;
+        }
+      } else {
+        remoteProfile = await readRemoteProfile(identity).catch(() => null);
+        remoteTasks = Array.isArray(remoteProfile?.tasks) ? remoteProfile.tasks.map(toLegacyTaskView) : [];
+        remoteSettings = remoteProfile?.settings || null;
+      }
+    }
+
     const guestHasData = guestLocal.tasks.length > 0 || !!guestLocal.settings;
+    const remoteHasData = remoteTasks.length > 0 || !!remoteSettings;
 
     if (guestHasData && mergeGuestData !== true && mergeGuestData !== false) {
       return {
         ok: true,
-        hasRemoteData: hasRemoteData(remote),
+        hasRemoteData: remoteHasData,
         needsMergeChoice: true,
         guestTaskCount: guestLocal.tasks.length,
       };
     }
 
     if (guestHasData && mergeGuestData === true) {
-      const merged = {
-        tasks: mergeTasks(remoteData.tasks, guestLocal.tasks),
-        settings: remoteData.settings || guestLocal.settings || null,
-      };
+      const mergedTasks = mergeTasks(remoteTasks, guestLocal.tasks).map(toLegacyTaskView);
+      const mergedSettings = remoteSettings || guestLocal.settings || null;
+
       if (hasFirestoreConfig()) {
         try {
-          await writeRemoteFields(identity, merged);
+          if (scope) {
+            const desiredDocs = mergedTasks.map((t) => toTaskDocForWrite(normalizeTaskDocument(t), identity));
+            const desiredById = new Map(desiredDocs.map((t) => [t.id, t]));
+            const currentRemoteDocs = await getTaskDocs(scope.path, identity.idToken).catch(() => []);
+
+            for (const taskDoc of desiredDocs) {
+              await addTaskDoc(scope.path, identity.idToken, taskDoc);
+            }
+
+            for (const remoteTask of currentRemoteDocs) {
+              if (!desiredById.has(remoteTask.id)) {
+                await deleteTaskDoc(scope.path, identity.idToken, remoteTask.id);
+              }
+            }
+
+            const teamId = await resolveTeamId(identity).catch(() => null);
+            if (teamId) {
+              if (mergedSettings && typeof mergedSettings === 'object') {
+                await saveTeamSettings(teamId, identity, mergedSettings);
+              }
+            } else {
+              await writeRemoteFields(identity, { settings: mergedSettings });
+            }
+          } else {
+            await writeRemoteFields(identity, { tasks: mergedTasks, settings: mergedSettings });
+          }
         } catch (_) {
-          return { ok: false, reason: 'REMOTE_WRITE_FAILED', hasRemoteData: hasRemoteData(remote) };
+          return { ok: false, reason: 'REMOTE_WRITE_FAILED', hasRemoteData: remoteHasData };
         }
       }
+
       await clearGuestLocalData();
       await clearActiveLocalData();
-      await setAlarmTaskIndex(merged.tasks);
+      await setAlarmTaskIndex(mergedTasks);
       await markSync(identity.profileKey);
-      return { ok: true, hasRemoteData: hasRemoteData(remote), mergedGuest: true };
+      return { ok: true, hasRemoteData: remoteHasData, mergedGuest: true };
     }
 
     await clearActiveLocalData();
-    await setAlarmTaskIndex(remoteData.tasks);
+    await setAlarmTaskIndex(remoteTasks);
     await markSync(identity.profileKey);
-    return { ok: true, hasRemoteData: hasRemoteData(remote), mergedGuest: false };
+    return { ok: true, hasRemoteData: remoteHasData, mergedGuest: false };
   }
 
   async function postSignOut() {

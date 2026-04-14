@@ -82,6 +82,9 @@ body.auth-open {
   padding: 8px 14px;
   background: #1a1a24;
   border-bottom: 1px solid rgba(255,255,255,0.06);
+  position: sticky;
+  top: 53px;
+  z-index: 9;
 }
 .owner-bar__label {
   font-size: 11px;
@@ -125,8 +128,8 @@ body.auth-open {
   background: #1a1a24;
   border-bottom: 1px solid rgba(255,255,255,0.06);
   position: sticky;
-  top: 84px;
-  z-index: 9;
+  top: 90px;
+  z-index: 8;
 }
 .tab-btn {
   flex: 1;

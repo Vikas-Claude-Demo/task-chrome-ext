@@ -392,6 +392,7 @@ async function initApp() {
   setupCustomerSearch();
   setupCustomerViewToggle();
   setupSearch();
+  setupNewTaskButton();
   setupSort();
   setupTimeline();
   setupViewToggle();
@@ -449,13 +450,22 @@ function updateAuthActionButton(authed) {
 }
 
 async function updateAuthUserLabel() {
-  const el = document.getElementById('auth-user-label');
-  if (!el) return;
+  const labelEl = document.getElementById('auth-user-label');
+  const emailEl = document.getElementById('auth-user-email');
+  if (!labelEl) return;
   const auth = await getAuthState();
   if (auth && auth.email) {
-    el.textContent = `Logged in as ${auth.email}`;
+    labelEl.textContent = 'Logged in as';
+    if (emailEl) {
+      emailEl.textContent = auth.email;
+      emailEl.title = auth.email;
+    }
   } else {
-    el.textContent = 'Guest mode';
+    labelEl.textContent = 'Guest mode';
+    if (emailEl) {
+      emailEl.textContent = '';
+      emailEl.title = '';
+    }
   }
 }
 
@@ -862,7 +872,7 @@ function buildDashCard(task) {
 
   const displayName = (task.firstName || task.lastName) ? `${task.firstName || ''} ${task.lastName || ''}`.trim() : (task.contactName || 'Unknown');
   const parts = displayName.split(' ');
-  const initials = ((parts[0] || '?')[0] + (parts[1] || '')[0]).toUpperCase();
+  const initials = (parts[0] || '?')[0].toUpperCase();
   const colorIdx = Math.abs([...displayName].reduce((a, c) => a + c.charCodeAt(0), 0)) % AVATAR_COLORS.length;
 
   // Determine priority based on followupDays
@@ -1055,9 +1065,9 @@ function renderCustomerTable(customers, allTasks) {
   customers.forEach(customer => {
     const tr = document.createElement('tr');
     const pendingCount = customer.tasks.filter(t => !t.completed).length;
+    const latestTask = Array.isArray(customer.tasks) && customer.tasks.length > 0 ? customer.tasks[0] : null;
     const stage = customer.currentStage ? getStage(customer.currentStage) : null;
-    const parts = customer.displayName.split(' ');
-    const initials = ((parts[0] || '?')[0] + (parts[1] || '')[0]).toUpperCase();
+    const initials = (String(customer.displayName || '').trim().charAt(0) || '?').toUpperCase();
     const colorIdx = Math.abs([...customer.displayName].reduce((a, c) => a + c.charCodeAt(0), 0)) % AVATAR_COLORS.length;
 
     // Name
@@ -1069,7 +1079,7 @@ function renderCustomerTable(customers, allTasks) {
     avatar.style.background = AVATAR_COLORS[colorIdx];
     const nameSpan = document.createElement('span');
     nameSpan.className = 'tbl-name';
-    nameSpan.textContent = customer.displayName;
+    nameSpan.textContent = customer.displayName || 'Unknown';
     nameSpan.style.cursor = 'pointer';
     nameSpan.addEventListener('click', () => openTimeline(customer.contactName, allTasks));
     tdName.append(avatar, nameSpan);
@@ -1098,7 +1108,9 @@ function renderCustomerTable(customers, allTasks) {
 
     // Stage
     const tdStage = document.createElement('td');
-    if (stage) {
+    if (latestTask && latestTask.id) {
+      tdStage.appendChild(buildStageBadge(latestTask));
+    } else if (stage) {
       const badge = document.createElement('span');
       badge.className = 'stage-badge';
       badge.style.setProperty('--stage-bg', stage.bg);
@@ -1155,9 +1167,9 @@ function buildCustomerCard(customer, allTasks) {
   card.setAttribute('role', 'listitem');
   card.addEventListener('click', () => openTimeline(customer.contactName, allTasks));
 
-  const parts = customer.displayName.split(' ');
-  const initials = ((parts[0] || '?')[0] + (parts[1] || '')[0]).toUpperCase();
+  const initials = (String(customer.displayName || '').trim().charAt(0) || '?').toUpperCase();
   const pendingCount = customer.tasks.filter(t => !t.completed).length;
+  const latestTask = Array.isArray(customer.tasks) && customer.tasks.length > 0 ? customer.tasks[0] : null;
   const stage = customer.currentStage ? getStage(customer.currentStage) : null;
 
   // Avatar
@@ -1224,7 +1236,11 @@ function buildCustomerCard(customer, allTasks) {
   card.appendChild(actions);
 
   // Stage badge
-  if (stage) {
+  if (latestTask && latestTask.id) {
+    const stageControl = buildStageBadge(latestTask);
+    stageControl.style.alignSelf = 'flex-start';
+    card.appendChild(stageControl);
+  } else if (stage) {
     const badge = document.createElement('span');
     badge.className = 'stage-badge';
     badge.style.setProperty('--stage-bg', stage.bg);
@@ -1496,7 +1512,7 @@ function renderTable(tasks, allTasks) {
     const tdContact = document.createElement('td');
     tdContact.className = 'td-contact';
     const _displayName = (task.firstName || task.lastName) ? `${task.firstName || ''} ${task.lastName || ''}`.trim() : (task.contactName || 'Unknown');
-    const _initials = ((task.firstName || task.contactName || '?')[0] + (task.lastName || '')[0]).toUpperCase();
+    const _initials = ((task.firstName || task.contactName || '?')[0]).toUpperCase();
     const avatar = document.createElement('span');
     avatar.className = 'tbl-avatar';
     avatar.textContent = _initials;
@@ -1662,7 +1678,7 @@ function buildCard(task, allTasks) {
   contactBtn.addEventListener('click', () => openTimeline(task.contactName, allTasks));
 
   const _cardDisplayName = (task.firstName || task.lastName) ? `${task.firstName || ''} ${task.lastName || ''}`.trim() : (task.contactName || 'Unknown');
-  const _cardInitials = ((task.firstName || task.contactName || '?')[0] + (task.lastName || '')[0]).toUpperCase();
+  const _cardInitials = ((task.firstName || task.contactName || '?')[0]).toUpperCase();
 
   const avatar = document.createElement('div');
   avatar.className = 'task-card__avatar';
@@ -2012,10 +2028,224 @@ async function handleDelete(taskId) {
 // ===== Nav, search, sort =====
 
 function setupSearch() {
-  document.getElementById('search-input').addEventListener('input', (e) => {
-    searchQuery = e.target.value.trim();
+  const input = document.getElementById('search-input');
+  if (!input) return;
+  input.oninput = () => {
+    const q = input.value.trim();
+    searchQuery = q;
+
+    // Header search should work in both task and contact views.
+    if (currentTab === 'contacts' || currentTab === 'customers') {
+      customerSearchQuery = q;
+      renderCustomersTab(cachedAllTasks, cachedTeamContacts);
+      return;
+    }
+
+    // When searching from Dashboard overview, switch to task list so results are visible.
+    if (currentTab === 'dashboard') {
+      const pendingBtn = document.querySelector('.nav-btn[data-tab="pending"]');
+      if (pendingBtn) {
+        document.querySelectorAll('.nav-btn[data-tab]').forEach((b) => b.classList.remove('nav-btn--active'));
+        pendingBtn.classList.add('nav-btn--active');
+      }
+      currentTab = 'pending';
+      showTab('pending');
+      currentTaskFilter = 'all';
+    }
+
     renderTasks(cachedAllTasks);
+  };
+}
+
+function setupNewTaskButton() {
+  const btn = document.getElementById('new-task-btn');
+  if (!btn) return;
+
+  btn.onclick = () => openNewTaskModal();
+}
+
+function openNewTaskModal() {
+  const existing = document.getElementById('new-task-overlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'new-task-overlay';
+  overlay.className = 'settings-overlay';
+
+  const modal = document.createElement('div');
+  modal.className = 'settings-modal';
+  modal.style.width = '520px';
+
+  const header = document.createElement('div');
+  header.className = 'settings-modal__header';
+  header.innerHTML = '<h2 class="settings-modal__title">New Task</h2>';
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'settings-modal__close';
+  closeBtn.innerHTML = '&#x2715;';
+  closeBtn.addEventListener('click', () => overlay.remove());
+  header.appendChild(closeBtn);
+
+  const panel = document.createElement('div');
+  panel.className = 'settings-panel';
+
+  const mkField = (label, id, type, value, required) => {
+    const row = document.createElement('div');
+    row.className = 'settings-row';
+    row.style.display = 'block';
+
+    const l = document.createElement('label');
+    l.className = 'settings-label';
+    l.textContent = label;
+    l.htmlFor = id;
+
+    const i = document.createElement(type === 'textarea' ? 'textarea' : 'input');
+    i.id = id;
+    i.className = 'settings-input';
+    if (type !== 'textarea') i.type = type;
+    if (type === 'textarea') i.rows = 3;
+    i.value = value || '';
+    i.required = !!required;
+    i.style.width = '100%';
+
+    row.append(l, i);
+    return row;
+  };
+
+  const mkSelect = (label, id, options, value) => {
+    const row = document.createElement('div');
+    row.className = 'settings-row';
+    row.style.display = 'block';
+
+    const l = document.createElement('label');
+    l.className = 'settings-label';
+    l.textContent = label;
+    l.htmlFor = id;
+
+    const s = document.createElement('select');
+    s.id = id;
+    s.className = 'settings-input';
+    s.style.width = '100%';
+    options.forEach((opt) => {
+      const o = document.createElement('option');
+      o.value = opt.value;
+      o.textContent = opt.label;
+      if (opt.value === value) o.selected = true;
+      s.appendChild(o);
+    });
+    row.append(l, s);
+    return row;
+  };
+
+  const ownerOptions = (OWNERS || []).map((o) => ({ value: o.id, label: o.label }));
+  const defaultOwner = (currentOwnerFilter !== 'all' && getOwner(currentOwnerFilter))
+    ? currentOwnerFilter
+    : ((OWNERS[0] && OWNERS[0].id) || 'owner_default');
+  const stageOptions = (STAGES && STAGES.length > 0)
+    ? STAGES.map((s) => ({ value: s.value, label: s.label }))
+    : [{ value: 'prospect', label: 'Prospect' }];
+
+  panel.append(
+    mkField('Contact Name', 'nt-contact', 'text', '', true),
+    mkField('Email (optional)', 'nt-email', 'email', '', false),
+    mkSelect('Owner', 'nt-owner', ownerOptions.length ? ownerOptions : [{ value: 'owner_default', label: 'You' }], defaultOwner),
+    mkSelect('Stage', 'nt-stage', stageOptions, (stageOptions[0] && stageOptions[0].value) || 'prospect'),
+    mkField('Notes (optional)', 'nt-notes', 'textarea', '', false)
+  );
+
+  const footer = document.createElement('div');
+  footer.className = 'settings-modal__footer';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'settings-footer-btn settings-footer-btn--cancel';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.addEventListener('click', () => overlay.remove());
+
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'settings-footer-btn settings-footer-btn--save';
+  saveBtn.textContent = 'Create Task';
+  saveBtn.addEventListener('click', async () => {
+    const contactName = String(document.getElementById('nt-contact').value || '').trim();
+    if (!contactName) {
+      alert('Contact name is required.');
+      return;
+    }
+
+    const email = String(document.getElementById('nt-email').value || '').trim().toLowerCase();
+    const selectedOwner = String(document.getElementById('nt-owner').value || defaultOwner);
+    const selectedStage = String(document.getElementById('nt-stage').value || 'prospect');
+    const description = String(document.getElementById('nt-notes').value || '').trim();
+
+    const now = Date.now();
+    const remindAt = new Date(now + (2 * 24 * 60 * 60 * 1000));
+    remindAt.setHours(9, 0, 0, 0);
+
+    const parts = contactName.split(/\s+/).filter(Boolean);
+    const firstName = parts[0] || '';
+    const lastName = parts.slice(1).join(' ');
+
+    const task = {
+      id: `task_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      type: 'linkedin',
+      platform: 'linkedin',
+      contact: {
+        name: contactName,
+        firstName,
+        lastName,
+        profileUrl: '',
+        email,
+        title: '',
+      },
+      stage: selectedStage,
+      status: 'pending',
+      description,
+      completed: false,
+      ownerId: selectedOwner,
+      owner: selectedOwner,
+      assignedTo: '',
+      followUpDays: 2,
+      followupDays: 2,
+      remindAt: remindAt.getTime(),
+      createdAt: now,
+      updatedAt: now,
+      threadUrl: '',
+      priority: 'medium',
+      tags: [],
+      createdBy: '',
+      contactName,
+      firstName,
+      lastName,
+      profileUrl: '',
+      email,
+      title: '',
+    };
+
+    try {
+      await cloudStore.saveTask(task);
+      overlay.remove();
+      await renderAll();
+
+      const pendingBtn = document.querySelector('.nav-btn[data-tab="pending"]');
+      if (pendingBtn) {
+        document.querySelectorAll('.nav-btn[data-tab]').forEach((b) => b.classList.remove('nav-btn--active'));
+        pendingBtn.classList.add('nav-btn--active');
+      }
+      currentTab = 'pending';
+      showTab('pending');
+    } catch (err) {
+      alert('Could not create task. Please try again.');
+      console.error('[dashboard] new task failed', err);
+    }
   });
+
+  footer.append(cancelBtn, saveBtn);
+  modal.append(header, panel, footer);
+  overlay.appendChild(modal);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+
+  const first = document.getElementById('nt-contact');
+  if (first) first.focus();
 }
 
 function setupSort() {
