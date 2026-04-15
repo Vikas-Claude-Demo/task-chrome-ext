@@ -216,6 +216,47 @@
   font-weight: 400 !important;
 }
 
+/* ===================================================
+   Tags in Save Task modal
+=================================================== */
+.lts-tag-chips {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 6px !important;
+  margin-top: 2px !important;
+}
+
+.lts-tag-chip {
+  border: 1px solid rgba(255,255,255,0.14) !important;
+  background: rgba(255,255,255,0.04) !important;
+  color: rgba(255,255,255,0.72) !important;
+  border-radius: 999px !important;
+  padding: 4px 10px !important;
+  font-size: 11.5px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  transition: background 0.12s, border-color 0.12s, color 0.12s !important;
+}
+
+.lts-tag-chip:hover {
+  border-color: rgba(200,255,0,0.35) !important;
+  color: #c8ff00 !important;
+}
+
+.lts-tag-chip--active {
+  border-color: rgba(200,255,0,0.55) !important;
+  background: rgba(200,255,0,0.12) !important;
+  color: #c8ff00 !important;
+}
+
+.lts-tag-create-row {
+  display: grid !important;
+  grid-template-columns: 1fr auto !important;
+  gap: 8px !important;
+  margin-top: 8px !important;
+  align-items: center !important;
+}
+
 /* --- Filter tabs --- */
 .lts-panel-tabs {
   display: flex !important;
@@ -406,6 +447,7 @@
   padding: 0 !important;
   width: 100% !important;
   max-width: 440px !important;
+  max-height: min(88vh, 760px) !important;
   box-shadow: 0 12px 48px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.06) !important;
   display: flex !important;
   flex-direction: column !important;
@@ -414,6 +456,20 @@
   box-sizing: border-box !important;
   overflow: hidden !important;
   -webkit-font-smoothing: antialiased !important;
+}
+
+.lts-modal-body {
+  flex: 1 !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain !important;
+}
+
+.lts-modal-footer {
+  background: #1a1a24 !important;
+  border-top: 1px solid rgba(255,255,255,0.08) !important;
+  padding: 10px 18px 14px !important;
+  flex-shrink: 0 !important;
 }
 
 /* ===================================================
@@ -426,6 +482,7 @@
   padding: 14px 18px !important;
   background: #0f0f14 !important;
   border-bottom: 1px solid rgba(255,255,255,0.06) !important;
+  flex-shrink: 0 !important;
 }
 
 .lts-modal-title {
@@ -618,7 +675,7 @@
 .lts-error {
   font-size: 12px !important;
   color: #FF4CB4 !important;
-  padding: 0 18px !important;
+  padding: 0 !important;
   margin: 0 !important;
   font-weight: 500 !important;
 }
@@ -637,8 +694,8 @@
 =================================================== */
 .lts-save-btn {
   display: block !important;
-  width: calc(100% - 36px) !important;
-  margin: 14px 18px !important;
+  width: 100% !important;
+  margin: 10px 0 0 0 !important;
   padding: 10px !important;
   background: #c8ff00 !important;
   color: #0f0f14 !important;

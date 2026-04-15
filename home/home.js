@@ -26,12 +26,16 @@ function updateAuthModeUI() {
   document.getElementById('auth-submit').textContent = isSignUp ? 'Sign Up' : 'Sign In';
   document.getElementById('auth-switch-text').textContent = isSignUp ? 'Already have an account?' : "Don't have an account?";
   document.getElementById('auth-switch-btn').textContent = isSignUp ? 'Sign In' : 'Sign Up';
-  document.getElementById('auth-error').hidden = true;
+  const errorEl = document.getElementById('auth-error');
+  errorEl.hidden = true;
+  errorEl.classList.remove('auth-error--success');
 
   const nameEl     = document.getElementById('auth-name');
   const teamcodeEl = document.getElementById('auth-teamcode');
+  const forgotBtn = document.getElementById('auth-forgot-btn');
   if (nameEl)     { nameEl.hidden     = !isSignUp; nameEl.required     = isSignUp; }
   if (teamcodeEl) { teamcodeEl.hidden = !isSignUp; }
+  if (forgotBtn) forgotBtn.hidden = isSignUp;
 }
 
 function toggleAuthMode() {
@@ -65,6 +69,55 @@ async function signUpWithEmailPassword(email, password) {
   const json = await res.json();
   if (!res.ok) throw new Error(json.error?.message || 'SIGNUP_FAILED');
   return json;
+}
+
+async function sendPasswordResetEmail(email) {
+  const res = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${FIREBASE_API_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requestType: 'PASSWORD_RESET', email })
+    }
+  );
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error?.message || 'PASSWORD_RESET_FAILED');
+  return json;
+}
+
+function setAuthMessage(message, isSuccess) {
+  const errorEl = document.getElementById('auth-error');
+  if (!errorEl) return;
+  errorEl.textContent = message;
+  errorEl.hidden = false;
+  errorEl.classList.toggle('auth-error--success', !!isSuccess);
+}
+
+function friendlyResetError(code) {
+  if (code.includes('INVALID_EMAIL')) return 'Please enter a valid email address.';
+  if (code.includes('MISSING_EMAIL')) return 'Please enter your email first.';
+  if (code.includes('NETWORK_REQUEST_FAILED')) return 'Network error. Check your connection.';
+  if (code.includes('TOO_MANY_REQUESTS')) return 'Too many attempts. Please wait and try again.';
+  return 'Could not send reset email. Please try again.';
+}
+
+async function handleForgotPassword() {
+  const email = document.getElementById('auth-email').value.trim();
+  const forgotBtn = document.getElementById('auth-forgot-btn');
+  if (!email) {
+    setAuthMessage('Please enter your email first.', false);
+    return;
+  }
+
+  if (forgotBtn) forgotBtn.disabled = true;
+  try {
+    await sendPasswordResetEmail(email);
+    setAuthMessage('If this email is registered, a password reset link has been sent.', true);
+  } catch (err) {
+    setAuthMessage(friendlyResetError(err.message || ''), false);
+  } finally {
+    if (forgotBtn) forgotBtn.disabled = false;
+  }
 }
 
 function friendlyAuthError(code, mode) {
@@ -253,6 +306,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('auth-form').addEventListener('submit', handleAuthSubmit);
   document.getElementById('auth-switch-btn').addEventListener('click', toggleAuthMode);
+  document.getElementById('auth-forgot-btn').addEventListener('click', handleForgotPassword);
   document.getElementById('guest-btn').addEventListener('click', continueAsGuest);
 });
 

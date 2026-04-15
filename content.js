@@ -926,7 +926,8 @@ function parseContactName(fullName) {
   if (!trimmed || trimmed === 'Unknown Contact') return { firstName: '', lastName: '' };
 
   // Guard against accidental "Name - Subject" style strings from email UIs.
-  const withoutSubject = trimmed.replace(/\s+[\u2014\u2013-]\s+.*$/, '').trim();
+  const withoutStatus = trimmed.replace(/\s+Status\s+is\s+.*$/i, '').trim();
+  const withoutSubject = withoutStatus.replace(/\s+[\u2014\u2013-]\s+.*$/, '').trim();
   const withoutEmail = withoutSubject.replace(/<[^>]+>/g, '').trim();
   const parts = withoutEmail.split(/\s+/);
   return { firstName: parts[0] || '', lastName: parts.slice(1).join(' ') || '' };
@@ -975,19 +976,28 @@ function extractLinkedInProfileUrl() {
 // Pattern: "{Name} Status is offline {Title/Headline}"
 // e.g. "vikas singh Status is offline xyz at dsfd"
 //   → name: "vikas singh", title: "xyz at dsfd"
+function cleanLinkedInText(raw) {
+  return String(raw || '')
+    .replace(/\s*Status\s+is\s+.*$/i, '')
+    .replace(/\s*\u00b7\s*\d+(st|nd|rd|th)?\s*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function splitLinkedInNameAndTitle(rawText) {
   const text = (rawText || '').trim();
   if (!text) return { name: '', title: '' };
 
-  const statusMatch = text.match(/\s*Status is (offline|online|busy|away|dnd)\s*/i);
+  const statusMatch = text.match(/\s*Status is (offline|online|busy|away|dnd|reachable|active|available|mobile)\s*/i);
   if (statusMatch) {
-    const name = text.slice(0, statusMatch.index).trim();
-    const title = text.slice(statusMatch.index + statusMatch[0].length).trim();
-    return { name: name || 'Unknown Contact', title };
+    const name = cleanLinkedInText(text.slice(0, statusMatch.index));
+    const tail = String(text.slice(statusMatch.index + statusMatch[0].length) || '').trim();
+    const title = cleanLinkedInText(tail);
+    return { name: name || 'Unknown Contact', title: title || '' };
   }
 
-  // No status marker — return whole text as name
-  return { name: text, title: '' };
+  // No status marker — return whole cleaned text as name
+  return { name: cleanLinkedInText(text) || text, title: '' };
 }
 
 function extractLinkedInName() {
@@ -1031,6 +1041,8 @@ function extractLinkedInTitle() {
     '.msg-entity-lockup__entity-subtitle',
     '.msg-overlay-conversation-bubble__subtitle',
     '.msg-thread .msg-entity-lockup__entity-subtitle',
+    '.msg-thread .t-14.t-black--light',
+    '.msg-thread [class*="entity-subtitle"]',
   ];
   for (const sel of subtitleSelectors) {
     try {
@@ -1497,6 +1509,12 @@ async function openModal(contactName, threadUrl, platform, prefillDescription) {
   modal.setAttribute('role', 'dialog');
   modal.addEventListener('click', (e) => e.stopPropagation());
 
+  const modalBody = document.createElement('div');
+  modalBody.className = 'lts-modal-body';
+
+  const modalFooter = document.createElement('div');
+  modalFooter.className = 'lts-modal-footer';
+
   // ---- Header ----
   const header = document.createElement('div');
   header.className = 'lts-modal-header';
@@ -1814,6 +1832,111 @@ async function openModal(contactName, threadUrl, platform, prefillDescription) {
 
   stageRow.append(stageLabel, stageSelect);
 
+  // ---- Tags (multi-select + create) ----
+  let teamTags = [];
+  try {
+    const fetchedTags = await cloudStore.listTeamTags(200);
+    teamTags = Array.isArray(fetchedTags) ? fetchedTags : [];
+  } catch (_) {
+    teamTags = [];
+  }
+  const selectedTagLabels = new Set();
+
+  const tagsRow = document.createElement('div');
+  tagsRow.className = 'lts-field-group';
+
+  const tagsLabel = document.createElement('label');
+  tagsLabel.className = 'lts-field-label';
+  tagsLabel.textContent = 'Tags';
+  tagsLabel.htmlFor = 'lts-tag-create';
+
+  const tagsChips = document.createElement('div');
+  tagsChips.className = 'lts-tag-chips';
+
+  const tagsCreateRow = document.createElement('div');
+  tagsCreateRow.className = 'lts-tag-create-row';
+
+  const tagsCreateInput = document.createElement('input');
+  tagsCreateInput.type = 'text';
+  tagsCreateInput.id = 'lts-tag-create';
+  tagsCreateInput.className = 'lts-input';
+  tagsCreateInput.placeholder = 'Create a tag and press Enter';
+
+  const tagsCreateBtn = document.createElement('button');
+  tagsCreateBtn.type = 'button';
+  tagsCreateBtn.className = 'lts-pill';
+  tagsCreateBtn.textContent = '+ Add';
+
+  const tagsStatus = document.createElement('p');
+  tagsStatus.className = 'lts-reminder-preview';
+  tagsStatus.hidden = true;
+
+  const renderTagChips = () => {
+    tagsChips.innerHTML = '';
+    (Array.isArray(teamTags) ? teamTags : []).forEach((tag) => {
+      const label = String((tag && tag.label) || '').trim();
+      if (!label) return;
+
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'lts-tag-chip';
+      chip.textContent = label;
+      if (selectedTagLabels.has(label)) chip.classList.add('lts-tag-chip--active');
+      chip.addEventListener('click', () => {
+        if (selectedTagLabels.has(label)) selectedTagLabels.delete(label);
+        else selectedTagLabels.add(label);
+        renderTagChips();
+      });
+      tagsChips.appendChild(chip);
+    });
+  };
+
+  const createTag = async () => {
+    const raw = String(tagsCreateInput.value || '').trim();
+    if (!raw) return;
+    tagsStatus.hidden = true;
+    tagsStatus.textContent = '';
+
+    const existing = teamTags.find((t) => String((t && t.label) || '').trim().toLowerCase() === raw.toLowerCase());
+    if (existing) {
+      selectedTagLabels.add(existing.label);
+      tagsCreateInput.value = '';
+      renderTagChips();
+      return;
+    }
+
+    let created = null;
+    try {
+      created = await cloudStore.createTeamTag({ label: raw });
+    } catch (_) {
+      created = null;
+    }
+
+    if (created && created.label) {
+      teamTags.push(created);
+      selectedTagLabels.add(created.label);
+    } else {
+      tagsStatus.hidden = false;
+      tagsStatus.textContent = 'Could not create tag in cloud. Please try again.';
+      return;
+    }
+
+    tagsCreateInput.value = '';
+    renderTagChips();
+  };
+
+  tagsCreateBtn.addEventListener('click', createTag);
+  tagsCreateInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      createTag();
+    }
+  });
+
+  renderTagChips();
+  tagsCreateRow.append(tagsCreateInput, tagsCreateBtn);
+  tagsRow.append(tagsLabel, tagsChips, tagsCreateRow, tagsStatus);
+
   // ---- Follow-up selector ----
   const followupRow = document.createElement('div');
   followupRow.className = 'lts-field-group';
@@ -1949,13 +2072,16 @@ async function openModal(contactName, threadUrl, platform, prefillDescription) {
     const finalEmail = emailInput.value.trim();
     const finalTitle = titleInput.value.trim();
     const finalContactName = `${finalFirstName} ${finalLastName}`.trim() || contactName;
-    handleSave(finalContactName, threadUrl, descInput, selectedDays, errorEl, platform, selectedStage, finalFirstName, finalLastName, finalProfileUrl, finalEmail, finalTitle, selectedOwner, emailContext);
+    const finalTags = Array.from(selectedTagLabels);
+    handleSave(finalContactName, threadUrl, descInput, selectedDays, errorEl, platform, selectedStage, finalFirstName, finalLastName, finalProfileUrl, finalEmail, finalTitle, selectedOwner, emailContext, finalTags);
   });
 
   // ---- Assemble ----
-  modal.append(header, searchRow, nameRow, titleRow, profileRow, emailRow);
-  if (ownerRow) modal.appendChild(ownerRow);
-  modal.append(stageRow, followupRow, descRow, errorEl, saveBtn);
+  modalBody.append(searchRow, nameRow, titleRow, profileRow, emailRow);
+  if (ownerRow) modalBody.appendChild(ownerRow);
+  modalBody.append(stageRow, tagsRow, followupRow, descRow);
+  modalFooter.append(errorEl, saveBtn);
+  modal.append(header, modalBody, modalFooter);
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
 
@@ -1993,7 +2119,7 @@ function showExtensionReloadToast(message) {
   }, 3500);
 }
 
-async function handleSave(contactName, threadUrl, descInput, selectedDays, errorEl, platform, stage, firstName, lastName, profileUrl, email, title, selectedOwnerId, emailContext) {
+async function handleSave(contactName, threadUrl, descInput, selectedDays, errorEl, platform, stage, firstName, lastName, profileUrl, email, title, selectedOwnerId, emailContext, selectedTags) {
   try {
     const description = descInput.value.trim();
     const remindAt = daysFromNow(selectedDays);
@@ -2035,6 +2161,9 @@ async function handleSave(contactName, threadUrl, descInput, selectedDays, error
     const normalizedToEmails = Array.isArray(emailContext && emailContext.to)
       ? emailContext.to.map((v) => String(v || '').trim().toLowerCase()).filter(Boolean)
       : [];
+    const normalizedTags = Array.isArray(selectedTags)
+      ? selectedTags.map((v) => String(v || '').trim()).filter(Boolean)
+      : [];
     const normalizedType = (
       platform === 'linkedin' ? 'linkedin'
         : (platform === 'gmail' || platform === 'outlook') ? 'email'
@@ -2066,7 +2195,7 @@ async function handleSave(contactName, threadUrl, descInput, selectedDays, error
       updatedAt: now.getTime(),
       threadUrl: threadUrl || '',
       priority: 'medium',
-      tags: [],
+      tags: normalizedTags,
       // Creator attribution as Firestore-style user reference
       createdBy: authData && authData.localId ? `users/${authData.localId}` : '',
       // Keep flat fields for backwards-compat with existing render code
@@ -2091,6 +2220,7 @@ async function handleSave(contactName, threadUrl, descInput, selectedDays, error
         phone: '',
         company: '',
         designation: '',
+        tags: normalizedTags,
       }).catch(() => null);
     }
 

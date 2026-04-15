@@ -75,6 +75,29 @@ body {
   padding: 8px 10px;
 }
 
+.auth-error--success {
+  border-color: #b7e4c7;
+  background: #ecfdf3;
+  color: #067647;
+}
+
+.auth-forgot-btn {
+  align-self: flex-end;
+  border: none;
+  background: transparent;
+  color: #1f6feb;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.auth-forgot-btn:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .auth-submit {
   border: none;
   border-radius: 10px;

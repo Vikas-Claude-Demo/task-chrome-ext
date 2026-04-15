@@ -70,6 +70,54 @@ async function signUpWithEmailPassword(email, password) {
   return json; // { idToken, refreshToken, localId, email, expiresIn }
 }
 
+async function sendPasswordResetEmail(email) {
+  const res = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${FIREBASE_API_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requestType: 'PASSWORD_RESET', email })
+    }
+  );
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error?.message || 'PASSWORD_RESET_FAILED');
+  return json;
+}
+
+function friendlyResetError(code) {
+  if (code.includes('INVALID_EMAIL')) return 'Please enter a valid email address.';
+  if (code.includes('MISSING_EMAIL')) return 'Please enter your email first.';
+  if (code.includes('NETWORK_REQUEST_FAILED')) return 'Network error. Check your connection.';
+  if (code.includes('TOO_MANY_REQUESTS')) return 'Too many attempts. Please wait and try again.';
+  return 'Could not send reset email. Please try again.';
+}
+
+function setAuthMessage(el, message, isSuccess) {
+  if (!el) return;
+  el.textContent = message;
+  el.hidden = false;
+  el.classList.toggle('auth-error--success', !!isSuccess);
+}
+
+async function handleForgotPassword(emailInputId, errorElId, triggerBtn) {
+  const email = String(document.getElementById(emailInputId)?.value || '').trim();
+  const errorEl = document.getElementById(errorElId);
+  if (!email) {
+    setAuthMessage(errorEl, 'Please enter your email first.', false);
+    return;
+  }
+
+  if (triggerBtn) triggerBtn.disabled = true;
+  try {
+    await sendPasswordResetEmail(email);
+    setAuthMessage(errorEl, 'If this email is registered, a reset link has been sent.', true);
+  } catch (err) {
+    setAuthMessage(errorEl, friendlyResetError(err.message || ''), false);
+  } finally {
+    if (triggerBtn) triggerBtn.disabled = false;
+  }
+}
+
 async function signOut() {
   await chrome.storage.local.remove('auth');
   await chrome.storage.sync.remove('currentOwner');
@@ -120,6 +168,8 @@ let OWNERS = DEFAULT_SETTINGS.owners;
 
 let currentFilter = 'today';
 let currentOwner  = OWNERS[0].id;
+let POPUP_TAGS = [];
+const selectedTagFilters = new Set();
 
 // 'signin' | 'signup' — tracks which mode the auth form is in
 let _authMode = 'signin';
@@ -218,10 +268,17 @@ function setupAuthForm() {
 
   // Clear previous error/value state and reset to sign-in labels
   document.getElementById('auth-error').hidden = true;
+  document.getElementById('auth-error').classList.remove('auth-error--success');
   document.getElementById('auth-subtitle').textContent = 'One tap. Back in the conversation';
   const submitBtn = document.getElementById('auth-submit');
   submitBtn.disabled = false;
   submitBtn.textContent = 'Sign In';
+
+  const forgotBtn = document.getElementById('auth-forgot-btn');
+  if (forgotBtn) {
+    forgotBtn.hidden = false;
+    forgotBtn.onclick = () => handleForgotPassword('auth-email', 'auth-error', forgotBtn);
+  }
 
   // Toggle switch
   document.getElementById('auth-switch-text').textContent = "Don't have an account?";
@@ -239,6 +296,9 @@ function toggleAuthMode() {
   document.getElementById('auth-switch-text').textContent = isSignUp ? 'Already have an account?' : "Don't have an account?";
   document.getElementById('auth-switch-btn').textContent  = isSignUp ? 'Sign In' : 'Sign Up';
   document.getElementById('auth-error').hidden = true;
+  document.getElementById('auth-error').classList.remove('auth-error--success');
+  const forgotBtn = document.getElementById('auth-forgot-btn');
+  if (forgotBtn) forgotBtn.hidden = isSignUp;
 }
 
 async function handleLogin(e) {
@@ -297,6 +357,7 @@ async function handleLogin(e) {
 
 async function initApp() {
   await loadSettings();
+  await loadPopupTags();
 
   // Resolve currentOwner from the selected owner id (sync) first.
   // This keeps task.ownerId aligned with the owner doc chosen in settings.
@@ -314,6 +375,7 @@ async function initApp() {
   }
 
   setupOwnerSwitcher();
+  setupPopupTagsUI();
   await renderTasks();
   setupFilterTabs();
 
@@ -482,6 +544,7 @@ function openAuthModal(mode) {
     <form id="auth-modal-form" class="auth-form" novalidate>
       <input id="auth-modal-email" type="email" class="auth-input" placeholder="Email" autocomplete="email" required />
       <input id="auth-modal-password" type="password" class="auth-input" placeholder="Password" autocomplete="current-password" required />
+      ${isSignUp ? '' : '<button type="button" id="auth-modal-forgot-btn" class="auth-forgot-btn">Forgot password?</button>'}
       <p id="auth-modal-error" class="auth-error" hidden></p>
       <button type="submit" id="auth-modal-submit" class="auth-submit-btn">
         ${isSignUp ? 'Sign Up' : 'Sign In'}
@@ -500,6 +563,10 @@ function openAuthModal(mode) {
 
   box.querySelector('#auth-modal-close-btn').addEventListener('click', closeAuthModal);
   box.querySelector('#auth-modal-form').addEventListener('submit', handleAuthModalLogin);
+  box.querySelector('#auth-modal-forgot-btn')?.addEventListener('click', () => {
+    const btn = box.querySelector('#auth-modal-forgot-btn');
+    handleForgotPassword('auth-modal-email', 'auth-modal-error', btn);
+  });
   box.querySelector('#auth-modal-switch-btn').addEventListener('click', () => {
     const newMode = _authMode === 'signin' ? 'signup' : 'signin';
     closeAuthModal();
@@ -601,6 +668,11 @@ async function renderTasks() {
   const filtered = allTasks.filter(task => {
     // Filter by owner — tasks without an owner are shown under everyone
     if (OWNERS.length > 1 && task.owner && task.owner !== currentOwner) return false;
+    if (selectedTagFilters.size > 0) {
+      const taskTags = Array.isArray(task.tags) ? task.tags.map((t) => String(t || '').trim().toLowerCase()).filter(Boolean) : [];
+      const hasSelected = Array.from(selectedTagFilters).some((tag) => taskTags.includes(tag));
+      if (!hasSelected) return false;
+    }
     if (currentFilter === 'today')     return !task.completed && task.remindAt >= todayStart.getTime() && task.remindAt <= todayEnd.getTime();
     if (currentFilter === 'pending')   return !task.completed;
     if (currentFilter === 'completed') return task.completed;
@@ -769,6 +841,84 @@ function setupFilterTabs() {
       renderTasks();
     });
   });
+}
+
+async function loadPopupTags() {
+  try {
+    const tags = await cloudStore.listTeamTags(200);
+    POPUP_TAGS = Array.isArray(tags) ? tags : [];
+  } catch (_) {
+    POPUP_TAGS = [];
+  }
+}
+
+function setupPopupTagsUI() {
+  const chipsEl = document.getElementById('popup-tag-chips');
+  const inputEl = document.getElementById('popup-tag-input');
+  const addBtn = document.getElementById('popup-tag-add-btn');
+  const root = document.getElementById('popup-tags');
+  if (!chipsEl || !inputEl || !addBtn || !root) return;
+
+  const renderTagChips = () => {
+    chipsEl.innerHTML = '';
+    POPUP_TAGS.forEach((tag) => {
+      const label = String((tag && tag.label) || '').trim();
+      if (!label) return;
+      const key = label.toLowerCase();
+
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'popup-tag-chip' + (selectedTagFilters.has(key) ? ' popup-tag-chip--active' : '');
+      chip.textContent = label;
+      chip.addEventListener('click', async () => {
+        if (selectedTagFilters.has(key)) selectedTagFilters.delete(key);
+        else selectedTagFilters.add(key);
+        renderTagChips();
+        await renderTasks();
+      });
+      chipsEl.appendChild(chip);
+    });
+  };
+
+  const createTag = async () => {
+    const raw = String(inputEl.value || '').trim();
+    if (!raw) return;
+
+    const existing = POPUP_TAGS.find((t) => String((t && t.label) || '').trim().toLowerCase() === raw.toLowerCase());
+    const key = raw.toLowerCase();
+    if (existing) {
+      selectedTagFilters.add(String(existing.label || raw).trim().toLowerCase());
+      inputEl.value = '';
+      renderTagChips();
+      await renderTasks();
+      return;
+    }
+
+    try {
+      const created = await cloudStore.createTeamTag({ label: raw });
+      if (created && created.label) {
+        POPUP_TAGS.push(created);
+        selectedTagFilters.add(String(created.label).trim().toLowerCase());
+      }
+    } catch (_) {
+      // Ignore transient create failure; user can retry.
+    }
+
+    inputEl.value = '';
+    renderTagChips();
+    await renderTasks();
+  };
+
+  addBtn.onclick = createTag;
+  inputEl.onkeydown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      createTag();
+    }
+  };
+
+  renderTagChips();
+  root.hidden = false;
 }
 
 function formatDate(ms) {

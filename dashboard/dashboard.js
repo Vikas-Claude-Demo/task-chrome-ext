@@ -68,6 +68,54 @@ async function signUpWithEmailPassword(email, password) {
   return json; // { idToken, refreshToken, localId, email, expiresIn }
 }
 
+async function sendPasswordResetEmail(email) {
+  const res = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${FIREBASE_API_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requestType: 'PASSWORD_RESET', email })
+    }
+  );
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error?.message || 'PASSWORD_RESET_FAILED');
+  return json;
+}
+
+function friendlyResetError(code) {
+  if (code.includes('INVALID_EMAIL')) return 'Please enter a valid email address.';
+  if (code.includes('MISSING_EMAIL')) return 'Please enter your email first.';
+  if (code.includes('NETWORK_REQUEST_FAILED')) return 'Network error. Check your connection.';
+  if (code.includes('TOO_MANY_REQUESTS')) return 'Too many attempts. Please wait and try again.';
+  return 'Could not send reset email. Please try again.';
+}
+
+function setAuthMessage(el, message, isSuccess) {
+  if (!el) return;
+  el.textContent = message;
+  el.hidden = false;
+  el.classList.toggle('auth-error--success', !!isSuccess);
+}
+
+async function handleForgotPassword(emailInputId, errorElId, triggerBtn) {
+  const email = String(document.getElementById(emailInputId)?.value || '').trim();
+  const errorEl = document.getElementById(errorElId);
+  if (!email) {
+    setAuthMessage(errorEl, 'Please enter your email first.', false);
+    return;
+  }
+
+  if (triggerBtn) triggerBtn.disabled = true;
+  try {
+    await sendPasswordResetEmail(email);
+    setAuthMessage(errorEl, 'If this email is registered, a reset link has been sent.', true);
+  } catch (err) {
+    setAuthMessage(errorEl, friendlyResetError(err.message || ''), false);
+  } finally {
+    if (triggerBtn) triggerBtn.disabled = false;
+  }
+}
+
 async function signOut() {
   await chrome.storage.local.remove('auth');
   await chrome.storage.sync.remove('currentOwner');
@@ -108,6 +156,9 @@ let currentTaskFilter = 'all';      // sub-filter within Tasks tab: 'all' | 'pen
 let currentSort = 'remindAt-asc';
 let searchQuery = '';
 let customerSearchQuery = '';
+let customerStageFilter = 'all';
+let customerTagFilter = 'all';
+let customerSort = 'lastActivity-desc';
 let customerView = 'cards';          // 'cards' | 'table'
 let cachedAllTasks = [];
 let cachedTeamContacts = [];
@@ -248,10 +299,17 @@ function setupAuthForm() {
   oldForm.parentNode.replaceChild(newForm, oldForm);
   document.getElementById('auth-form').addEventListener('submit', handleLogin);
   document.getElementById('auth-error').hidden = true;
+  document.getElementById('auth-error').classList.remove('auth-error--success');
   document.getElementById('auth-subtitle').textContent = 'One tap. Back in the conversation';
   const submitBtn = document.getElementById('auth-submit');
   submitBtn.disabled = false;
   submitBtn.textContent = 'Sign In';
+
+  const forgotBtn = document.getElementById('auth-forgot-btn');
+  if (forgotBtn) {
+    forgotBtn.hidden = false;
+    forgotBtn.onclick = () => handleForgotPassword('auth-email', 'auth-error', forgotBtn);
+  }
 
   // Toggle switch
   document.getElementById('auth-switch-text').textContent = "Don't have an account?";
@@ -269,6 +327,9 @@ function toggleAuthMode() {
   document.getElementById('auth-switch-text').textContent = isSignUp ? 'Already have an account?' : "Don't have an account?";
   document.getElementById('auth-switch-btn').textContent  = isSignUp ? 'Sign In' : 'Sign Up';
   document.getElementById('auth-error').hidden = true;
+  document.getElementById('auth-error').classList.remove('auth-error--success');
+  const forgotBtn = document.getElementById('auth-forgot-btn');
+  if (forgotBtn) forgotBtn.hidden = isSignUp;
 
   // Show signup-only fields
   const nameEl     = document.getElementById('auth-name');
@@ -390,6 +451,7 @@ async function initApp() {
   setupTabs();
   setupTaskSubFilters();
   setupCustomerSearch();
+  setupCustomerFilters();
   setupCustomerViewToggle();
   setupSearch();
   setupNewTaskButton();
@@ -576,6 +638,7 @@ function openAuthModal(mode) {
       ${isSignUp ? `<input id="auth-modal-name" type="text" class="auth-input" placeholder="Full Name" autocomplete="name" required />` : ''}
       <input id="auth-modal-email" type="email" class="auth-input" placeholder="Email" autocomplete="email" required />
       <input id="auth-modal-password" type="password" class="auth-input" placeholder="Password" autocomplete="current-password" required />
+      ${isSignUp ? '' : '<button type="button" id="auth-modal-forgot-btn" class="auth-forgot-btn">Forgot password?</button>'}
       ${isSignUp ? `<input id="auth-modal-teamcode" type="text" class="auth-input" placeholder="Team Code (optional — leave blank to create new team)" autocomplete="off" maxlength="8" />` : ''}
       <p id="auth-modal-error" class="auth-error" hidden></p>
       <button type="submit" id="auth-modal-submit" class="auth-submit-btn">
@@ -595,6 +658,10 @@ function openAuthModal(mode) {
 
   box.querySelector('#auth-modal-close-btn').addEventListener('click', closeAuthModal);
   box.querySelector('#auth-modal-form').addEventListener('submit', handleAuthModalLogin);
+  box.querySelector('#auth-modal-forgot-btn')?.addEventListener('click', () => {
+    const btn = box.querySelector('#auth-modal-forgot-btn');
+    handleForgotPassword('auth-modal-email', 'auth-modal-error', btn);
+  });
   box.querySelector('#auth-modal-switch-btn').addEventListener('click', () => {
     const newMode = _authMode === 'signin' ? 'signup' : 'signin';
     closeAuthModal();
@@ -938,6 +1005,13 @@ function renderCustomersTab(allTasks, teamContacts) {
 
     const sorted = matches.slice().sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
     const latest = sorted[0] || null;
+    const baseTags = Array.isArray(base.tags) ? base.tags : [];
+    const taskTags = matches.flatMap((t) => (Array.isArray(t.tags) ? t.tags : []));
+    const tags = Array.from(new Set(
+      [...baseTags, ...taskTags]
+        .map((v) => String(v || '').trim())
+        .filter(Boolean)
+    ));
 
     return {
       id: base.id || '',
@@ -950,6 +1024,7 @@ function renderCustomersTab(allTasks, teamContacts) {
       profileUrl: String(base.profileUrl || base.linkedinUrl || '').trim(),
       email: String(base.email || '').trim().toLowerCase(),
       phone: String(base.phone || '').trim(),
+      tags,
       tasks: sorted,
       lastInteraction: latest ? Number(latest.createdAt || latest.updatedAt || 0) : Number(base.updatedAt || base.createdAt || 0),
       currentStage: latest ? latest.stage : null,
@@ -971,6 +1046,7 @@ function renderCustomersTab(allTasks, teamContacts) {
       profileUrl: c.linkedinUrl || '',
       email: c.email || '',
       phone: c.phone || '',
+      tags: Array.isArray(c.tags) ? c.tags : [],
       createdAt: c.createdAt || 0,
       updatedAt: c.updatedAt || 0,
     }));
@@ -1001,12 +1077,14 @@ function renderCustomersTab(allTasks, teamContacts) {
       profileUrl: task.profileUrl || '',
       email: taskEmail,
       phone: '',
+      tags: [],
       createdAt: task.createdAt || 0,
       updatedAt: task.updatedAt || 0,
     }));
   });
 
   let customers = [...contactMap.values()];
+  refreshCustomerFilterOptions(customers);
 
   if (customerSearchQuery) {
     const q = customerSearchQuery.toLowerCase();
@@ -1018,7 +1096,26 @@ function renderCustomersTab(allTasks, teamContacts) {
     });
   }
 
-  customers.sort((a, b) => b.lastInteraction - a.lastInteraction);
+  if (customerStageFilter !== 'all') {
+    customers = customers.filter((c) => String(c.currentStage || '').trim() === customerStageFilter);
+  }
+
+  if (customerTagFilter !== 'all') {
+    const wanted = customerTagFilter.toLowerCase();
+    customers = customers.filter((c) => (Array.isArray(c.tags) ? c.tags : [])
+      .map((t) => String(t || '').trim().toLowerCase())
+      .includes(wanted));
+  }
+
+  if (customerSort === 'name-asc') {
+    customers.sort((a, b) => String(a.displayName || '').localeCompare(String(b.displayName || '')));
+  } else if (customerSort === 'name-desc') {
+    customers.sort((a, b) => String(b.displayName || '').localeCompare(String(a.displayName || '')));
+  } else if (customerSort === 'lastActivity-asc') {
+    customers.sort((a, b) => Number(a.lastInteraction || 0) - Number(b.lastInteraction || 0));
+  } else {
+    customers.sort((a, b) => Number(b.lastInteraction || 0) - Number(a.lastInteraction || 0));
+  }
 
   const grid = document.getElementById('customer-grid');
   const tableWrap = document.getElementById('customer-table-wrap');
@@ -1376,6 +1473,76 @@ function setupCustomerSearch() {
     customerSearchQuery = e.target.value.trim();
     renderCustomersTab(cachedAllTasks, cachedTeamContacts);
   });
+}
+
+function refreshCustomerFilterOptions(customers) {
+  const stageEl = document.getElementById('customer-stage-filter');
+  const tagEl = document.getElementById('customer-tag-filter');
+  const sortEl = document.getElementById('customer-sort');
+  if (!stageEl || !tagEl || !sortEl) return;
+
+  const stageBefore = customerStageFilter;
+  const tagBefore = customerTagFilter;
+
+  stageEl.innerHTML = '<option value="all">All stages</option>';
+  STAGES.forEach((s) => {
+    const opt = document.createElement('option');
+    opt.value = s.value;
+    opt.textContent = s.label;
+    stageEl.appendChild(opt);
+  });
+
+  const tags = Array.from(new Set(
+    (Array.isArray(customers) ? customers : [])
+      .flatMap((c) => (Array.isArray(c.tags) ? c.tags : []))
+      .map((t) => String(t || '').trim())
+      .filter(Boolean)
+  )).sort((a, b) => a.localeCompare(b));
+
+  tagEl.innerHTML = '<option value="all">All tags</option>';
+  tags.forEach((tag) => {
+    const opt = document.createElement('option');
+    opt.value = tag;
+    opt.textContent = tag;
+    tagEl.appendChild(opt);
+  });
+
+  if ([...stageEl.options].some((o) => o.value === stageBefore)) {
+    customerStageFilter = stageBefore;
+  } else {
+    customerStageFilter = 'all';
+  }
+  if ([...tagEl.options].some((o) => o.value === tagBefore)) {
+    customerTagFilter = tagBefore;
+  } else {
+    customerTagFilter = 'all';
+  }
+
+  stageEl.value = customerStageFilter;
+  tagEl.value = customerTagFilter;
+  sortEl.value = customerSort;
+}
+
+function setupCustomerFilters() {
+  const stageEl = document.getElementById('customer-stage-filter');
+  const tagEl = document.getElementById('customer-tag-filter');
+  const sortEl = document.getElementById('customer-sort');
+  if (!stageEl || !tagEl || !sortEl) return;
+
+  stageEl.onchange = (e) => {
+    customerStageFilter = e.target.value || 'all';
+    renderCustomersTab(cachedAllTasks, cachedTeamContacts);
+  };
+
+  tagEl.onchange = (e) => {
+    customerTagFilter = e.target.value || 'all';
+    renderCustomersTab(cachedAllTasks, cachedTeamContacts);
+  };
+
+  sortEl.onchange = (e) => {
+    customerSort = e.target.value || 'lastActivity-desc';
+    renderCustomersTab(cachedAllTasks, cachedTeamContacts);
+  };
 }
 
 function setupCustomerViewToggle() {

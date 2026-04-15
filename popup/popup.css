@@ -152,6 +152,86 @@ body.auth-open {
   font-weight: 700;
 }
 
+/* ===== Tags ===== */
+.popup-tags {
+  padding: 8px 10px;
+  background: #161620;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.popup-tag-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.popup-tag-chip {
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.04);
+  color: rgba(255,255,255,0.62);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.popup-tag-chip:hover {
+  border-color: rgba(200,255,0,0.35);
+  color: #c8ff00;
+}
+
+.popup-tag-chip--active {
+  background: rgba(200,255,0,0.12);
+  border-color: rgba(200,255,0,0.5);
+  color: #c8ff00;
+}
+
+.popup-tag-create-row {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.popup-tag-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  font-size: 12px;
+  font-family: inherit;
+  color: #e8e8ed;
+  background: rgba(255,255,255,0.04);
+  outline: none;
+}
+
+.popup-tag-input:focus {
+  border-color: rgba(200,255,0,0.4);
+  box-shadow: 0 0 0 3px rgba(200,255,0,0.08);
+}
+
+.popup-tag-input::placeholder {
+  color: rgba(255,255,255,0.28);
+}
+
+.popup-tag-add-btn {
+  border: 1px solid rgba(200,255,0,0.35);
+  border-radius: 8px;
+  padding: 0 10px;
+  background: rgba(200,255,0,0.1);
+  color: #c8ff00;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.popup-tag-add-btn:hover {
+  background: rgba(200,255,0,0.18);
+}
+
 /* ===== Task list ===== */
 #task-list-container {
   padding: 8px;
@@ -325,6 +405,27 @@ body.auth-open {
   text-align: center;
   margin: 0;
   line-height: 1.4;
+}
+
+.auth-error.auth-error--success {
+  color: #2ecc71;
+}
+
+.auth-forgot-btn {
+  align-self: flex-end;
+  border: none;
+  background: transparent;
+  color: #c8ff00;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.auth-forgot-btn:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .auth-submit-btn {
   width: 100%;

@@ -22,6 +22,7 @@
                placeholder="Email" autocomplete="email" required />
         <input id="auth-password" type="password" class="auth-input"
                placeholder="Password" autocomplete="current-password" required />
+         <button type="button" id="auth-forgot-btn" class="auth-forgot-btn">Forgot password?</button>
         <p id="auth-error" class="auth-error" hidden></p>
         <button type="submit" id="auth-submit" class="auth-submit-btn">Sign In</button>
       </form>
@@ -52,6 +53,14 @@
         <button class="tab-btn tab-btn--active" data-filter="today" role="tab" aria-selected="true">☀️ Today</button>
         <button class="tab-btn" data-filter="pending" role="tab" aria-selected="false">Pending</button>
         <button class="tab-btn" data-filter="completed" role="tab" aria-selected="false">Completed</button>
+      </div>
+
+      <div id="popup-tags" class="popup-tags" aria-label="Task tags">
+        <div id="popup-tag-chips" class="popup-tag-chips" role="group" aria-label="Select tags"></div>
+        <div class="popup-tag-create-row">
+          <input id="popup-tag-input" class="popup-tag-input" type="text" placeholder="Create tag and press Enter" aria-label="Create new tag" />
+          <button id="popup-tag-add-btn" class="popup-tag-add-btn" type="button">+ Add</button>
+        </div>
       </div>
 
       <div id="task-list-container" role="list">

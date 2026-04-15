@@ -20,6 +20,7 @@
       <input id="auth-name" type="text" class="auth-input" placeholder="Full Name" autocomplete="name" hidden />
       <input id="auth-email" type="email" class="auth-input" placeholder="Email" autocomplete="email" required />
       <input id="auth-password" type="password" class="auth-input" placeholder="Password" autocomplete="current-password" required />
+      <button type="button" id="auth-forgot-btn" class="auth-forgot-btn">Forgot password?</button>
       <input id="auth-teamcode" type="text" class="auth-input" placeholder="Team Code (optional — leave blank to create new team)" autocomplete="off" maxlength="8" hidden />
       <p id="auth-error" class="auth-error" hidden></p>
       <button type="submit" id="auth-submit" class="auth-submit-btn">Sign In</button>
@@ -207,6 +208,18 @@
     <section id="tab-customers" class="tab-panel" hidden>
       <div class="tasks-toolbar">
         <input type="search" id="customer-search" class="search-input" placeholder="Search contacts..." />
+        <select id="customer-stage-filter" class="sort-select customer-filter-select" title="Filter by stage" aria-label="Filter contacts by stage">
+          <option value="all">All stages</option>
+        </select>
+        <select id="customer-tag-filter" class="sort-select customer-filter-select" title="Filter by tag" aria-label="Filter contacts by tag">
+          <option value="all">All tags</option>
+        </select>
+        <select id="customer-sort" class="sort-select customer-filter-select" title="Sort contacts" aria-label="Sort contacts">
+          <option value="lastActivity-desc">Last activity (latest)</option>
+          <option value="lastActivity-asc">Last activity (oldest)</option>
+          <option value="name-asc">Name A-Z</option>
+          <option value="name-desc">Name Z-A</option>
+        </select>
         <div class="view-toggle" role="group">
           <button class="view-btn view-btn--active" id="cust-view-cards" title="Card view">⊞</button>
           <button class="view-btn" id="cust-view-table" title="Table view">☰</button>

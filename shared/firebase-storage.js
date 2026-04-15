@@ -786,6 +786,21 @@
     return String(value || '').trim().toLowerCase();
   }
 
+  function normalizeTagList(tags) {
+    if (!Array.isArray(tags)) return [];
+    const seen = new Set();
+    const out = [];
+    for (const raw of tags) {
+      const label = String(raw || '').trim();
+      if (!label) continue;
+      const key = label.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(label);
+    }
+    return out;
+  }
+
   async function ensureTeamContact(contact) {
     const identity = await resolveIdentity();
     if (identity.mode !== 'user' || !hasFirestoreConfig()) return null;
@@ -802,6 +817,7 @@
     const phone = String(safe.phone || '').trim();
     const company = String(safe.company || '').trim();
     const designation = String(safe.designation || '').trim();
+    const incomingTags = normalizeTagList(safe.tags);
 
     const existing = await listCollectionAtPath(`teams/${teamId}/contacts`, identity.idToken).catch(() => []);
     const linkedinKey = normalizeLookup(linkedinUrl);
@@ -818,6 +834,8 @@
     });
 
     const contactId = matched ? matched.id : randomId('contact');
+    const existingTags = normalizeTagList(matched && matched.tags);
+    const mergedTags = normalizeTagList([...existingTags, ...incomingTags]);
     await writeDocAtPath(`teams/${teamId}/contacts/${contactId}`, identity.idToken, {
       name,
       firstName,
@@ -827,7 +845,9 @@
       phone,
       company,
       designation,
+      tags: mergedTags,
       createdAt: matched && matched.createdAt ? new Date(matched.createdAt) : new Date(),
+      updatedAt: new Date(),
       addedBy: identity.authUid,
     });
 
@@ -876,6 +896,7 @@
         phone: String(c.phone || ''),
         company: String(c.company || ''),
         designation: String(c.designation || ''),
+        tags: normalizeTagList(c.tags),
       }));
   }
 
@@ -906,6 +927,7 @@
         phone: String(c.phone || ''),
         company: String(c.company || ''),
         designation: String(c.designation || ''),
+        tags: normalizeTagList(c.tags),
         createdAt: Number(c.createdAt || 0),
         updatedAt: Number(c.updatedAt || 0),
       }));
@@ -923,6 +945,8 @@
     if (!existing) throw new Error('CONTACT_NOT_FOUND');
 
     const incoming = (fields && typeof fields === 'object') ? fields : {};
+    const existingTags = normalizeTagList(existing.tags);
+    const incomingTags = ('tags' in incoming) ? normalizeTagList(incoming.tags) : existingTags;
     const safe = {
       name: String(incoming.name ?? existing.name ?? '').trim(),
       firstName: String(incoming.firstName ?? existing.firstName ?? '').trim(),
@@ -932,6 +956,7 @@
       phone: String(incoming.phone ?? existing.phone ?? '').trim(),
       company: String(incoming.company ?? existing.company ?? '').trim(),
       designation: String(incoming.designation ?? existing.designation ?? '').trim(),
+      tags: incomingTags,
       createdAt: existing.createdAt ? new Date(existing.createdAt) : new Date(),
       updatedAt: new Date(),
       addedBy: existing.addedBy || identity.authUid,
@@ -939,6 +964,78 @@
 
     await writeDocAtPath(path, identity.idToken, safe);
     return { id: String(contactId), teamId };
+  }
+
+  async function listTeamTags(limit) {
+    const identity = await resolveIdentity();
+    if (identity.mode !== 'user' || !hasFirestoreConfig()) return [];
+
+    const teamId = await resolveTeamId(identity);
+    if (!teamId) return [];
+
+    const max = Math.max(1, Math.min(Number(limit) || 200, 1000));
+    const docs = await listCollectionAtPath(`teams/${teamId}/tags`, identity.idToken).catch(() => []);
+
+    return docs
+      .slice()
+      .sort((a, b) => {
+        const ao = Number(a.order) || 0;
+        const bo = Number(b.order) || 0;
+        if (ao !== bo) return ao - bo;
+        return String(a.label || '').localeCompare(String(b.label || ''));
+      })
+      .slice(0, max)
+      .map((doc, idx) => {
+        const id = normalizeDocId(doc.id, randomId('tag'));
+        const label = String(doc.label || doc.name || id).trim();
+        const color = String(doc.color || '#84cc16');
+        return {
+          id,
+          label,
+          color,
+          bg: colorToBg(color, 0.14),
+          order: Number(doc.order) || idx,
+        };
+      });
+  }
+
+  async function createTeamTag(tag) {
+    const identity = await resolveIdentity();
+    if (identity.mode !== 'user' || !hasFirestoreConfig()) return null;
+
+    const teamId = await resolveTeamId(identity);
+    if (!teamId) return null;
+
+    const safe = (tag && typeof tag === 'object') ? tag : {};
+    const label = String(safe.label || safe.name || '').trim();
+    if (!label) return null;
+
+    const existing = await listCollectionAtPath(`teams/${teamId}/tags`, identity.idToken).catch(() => []);
+    const same = existing.find((d) => String(d.label || d.name || '').trim().toLowerCase() === label.toLowerCase());
+    const tagId = same
+      ? normalizeDocId(same.id, randomId('tag'))
+      : normalizeDocId(safe.id, slugifyLabel(label, randomId('tag')));
+
+    const color = String(safe.color || (same && same.color) || '#84cc16');
+    const createdAt = (same && same.createdAt) ? new Date(same.createdAt) : new Date();
+    const order = Number(safe.order ?? (same && same.order) ?? existing.length) || 0;
+
+    await writeDocAtPath(`teams/${teamId}/tags/${tagId}`, identity.idToken, {
+      label,
+      color,
+      createdAt,
+      updatedAt: new Date(),
+      createdBy: `users/${identity.authUid}`,
+      order,
+    });
+
+    return {
+      id: tagId,
+      label,
+      color,
+      bg: colorToBg(color, 0.14),
+      order,
+    };
   }
 
   async function getTaskDocs(collectionPath, idToken) {
@@ -1437,6 +1534,8 @@
     searchTeamContacts,
     listTeamContacts,
     updateTeamContact,
+    listTeamTags,
+    createTeamTag,
     getSettings,
     setSettings,
     postSignIn,

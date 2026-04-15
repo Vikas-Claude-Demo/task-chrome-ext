@@ -699,6 +699,10 @@ body { display: flex; min-height: 100vh; }
   flex-wrap: wrap;
 }
 
+.customer-filter-select {
+  min-width: 170px;
+}
+
 /* ===== Nav dot (for status items) ===== */
 .nav-btn__dot {
   width: 8px;
@@ -1941,6 +1945,29 @@ select.settings-input {
   border-radius: var(--radius-sm);
   padding: 8px 12px;
   margin: 0;
+}
+
+.auth-error.auth-error--success {
+  color: #0f5132;
+  background: #e8f6ee;
+  border-color: #b7e4c7;
+}
+
+.auth-forgot-btn {
+  align-self: flex-end;
+  border: none;
+  background: transparent;
+  color: var(--indigo);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font);
+  cursor: pointer;
+  padding: 0;
+}
+
+.auth-forgot-btn:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 /* Sign up / sign in toggle row */

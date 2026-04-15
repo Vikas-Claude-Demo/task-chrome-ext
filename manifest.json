@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Nudge",
+  "name": "Nudge - Follow-up Reminder for Gmail, LinkedIn & WhatsApp",
+  "short_name": "Nudge",
+  "description": "Never forget follow-ups again. Save tasks from Gmail, LinkedIn, and WhatsApp and get reminded at the right time.",
   "version": "3.0.0",
-  "description": "Save follow-up tasks from LinkedIn, Gmail, Outlook and WhatsApp with smart reminders",
   "permissions": [
     "storage",
     "alarms",
