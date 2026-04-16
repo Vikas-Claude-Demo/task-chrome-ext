@@ -794,6 +794,12 @@ function buildTaskCard(task) {
     completeBtn.textContent = '✓ Done';
     completeBtn.addEventListener('click', () => handleComplete(task.id));
     actions.appendChild(completeBtn);
+    
+    const repeatBtn = document.createElement('button');
+    repeatBtn.className = 'task-btn task-btn--repeat';
+    repeatBtn.textContent = '↻ Repeat';
+    repeatBtn.addEventListener('click', () => handleRepeat(task));
+    actions.appendChild(repeatBtn);
   }
 
   const deleteBtn = document.createElement('button');
@@ -819,6 +825,50 @@ async function handleComplete(taskId) {
     updatedAt: Date.now(),
   });
   chrome.runtime.sendMessage({ action: 'DELETE_ALARM', alarmName: taskId });
+  await renderTasks();
+}
+
+function getRepeatGapMs(task) {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const remindAt = Number(task && task.remindAt) || Date.now();
+  const createdAt = Number(task && task.createdAt) || 0;
+  const explicitDays = Number(task && (task.followUpDays ?? task.followupDays));
+
+  if (Number.isFinite(explicitDays) && explicitDays > 0) {
+    return Math.max(dayMs, Math.round(explicitDays) * dayMs);
+  }
+
+  const inferred = remindAt - createdAt;
+  if (Number.isFinite(inferred) && inferred > 0) return inferred;
+  return 2 * dayMs;
+}
+
+async function handleRepeat(task) {
+  if (!task || !task.id) return;
+
+  const previousRemindAt = Number(task.remindAt) || Date.now();
+  const gapMs = getRepeatGapMs(task);
+  const nextCreatedAt = previousRemindAt;
+  const nextRemindAt = previousRemindAt + gapMs;
+  const nextFollowupDays = Math.max(1, Math.round(gapMs / (24 * 60 * 60 * 1000)));
+
+  const repeatedTask = {
+    ...task,
+    id: `task_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    completed: false,
+    status: 'pending',
+    createdAt: nextCreatedAt,
+    remindAt: nextRemindAt,
+    updatedAt: nextCreatedAt,
+    followUpDays: nextFollowupDays,
+    followupDays: nextFollowupDays,
+  };
+
+  await cloudStore.saveTask(repeatedTask);
+  chrome.runtime.sendMessage({
+    action: 'CREATE_ALARM',
+    task: { id: repeatedTask.id, remindAt: repeatedTask.remindAt },
+  });
   await renderTasks();
 }
 

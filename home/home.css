@@ -130,6 +130,95 @@ body {
   margin-left: 4px;
 }
 
+.google-auth-btn {
+  width: 100%;
+  margin-top: 12px;
+  border: 1px solid #d9dee7;
+  background: #fff;
+  color: #2b2f36;
+  border-radius: 10px;
+  padding: 11px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.google-auth-btn:hover {
+  border-color: #c7cfdd;
+  box-shadow: 0 4px 14px rgba(31, 111, 235, 0.12);
+}
+
+.google-team-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 24, 32, 0.52);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 1000;
+}
+
+.google-team-modal[hidden] {
+  display: none !important;
+}
+
+.google-team-modal__card {
+  width: min(420px, 100%);
+  background: #fff;
+  border: 1px solid #d9dee7;
+  border-radius: 14px;
+  box-shadow: 0 20px 46px rgba(34, 52, 85, 0.24);
+  padding: 18px;
+}
+
+.google-team-modal__title {
+  margin: 0;
+  font-size: 18px;
+}
+
+.google-team-modal__sub {
+  margin: 8px 0 12px;
+  font-size: 13px;
+  color: #6f7782;
+  line-height: 1.45;
+}
+
+.google-team-modal__actions {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.google-team-btn {
+  border: none;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.google-team-btn--create {
+  background: #eef2fc;
+  color: #2850a7;
+}
+
+.google-team-btn--join {
+  background: #f06a6a;
+  color: #fff;
+}
+
+.google-team-btn--cancel {
+  margin-top: 10px;
+  width: 100%;
+  background: #f4f6fb;
+  color: #475467;
+}
+
 .auth-divider {
   margin: 16px 0;
   text-align: center;

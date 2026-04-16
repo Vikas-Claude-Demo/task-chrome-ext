@@ -65,6 +65,8 @@
           <button type="button" id="auth-switch-btn" class="auth-switch-btn">Sign Up</button>
         </p>
 
+        <button id="google-auth-btn" type="button" class="google-auth-btn">Continue with Google</button>
+
           <!-- <div class="auth-divider"><span>OR</span></div>
           <button id="guest-btn" type="button" class="guest-btn">Continue as Guest</button> -->
       </div>
@@ -76,6 +78,20 @@
       </div>
     </section>
   </main>
+
+  <div id="google-team-modal" class="google-team-modal" hidden>
+    <div class="google-team-modal__card" role="dialog" aria-modal="true" aria-labelledby="google-team-title">
+      <h3 id="google-team-title" class="google-team-modal__title">Join existing team?</h3>
+      <p class="google-team-modal__sub">If you have a team code, enter it. Otherwise, we will create a new team for you.</p>
+      <input id="google-team-code" type="text" class="auth-input" placeholder="Team Code (optional)" maxlength="8" />
+      <p id="google-team-error" class="auth-error" hidden></p>
+      <div class="google-team-modal__actions">
+        <button id="google-team-create" type="button" class="google-team-btn google-team-btn--create">No, Create New Team</button>
+        <button id="google-team-join" type="button" class="google-team-btn google-team-btn--join">Join with Code</button>
+      </div>
+      <button id="google-team-cancel" type="button" class="google-team-btn google-team-btn--cancel">Cancel</button>
+    </div>
+  </div>
 
   <script src="../shared/config.js"></script>
   <script src="../shared/firebase-storage.js"></script>

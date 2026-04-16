@@ -21,6 +21,15 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   await updateBadge();
 });
 
+// ===== Notification click: open dashboard =====
+chrome.notifications.onClicked.addListener((notificationId) => {
+  // Only handle task reminder notifications created with task IDs.
+  if (!notificationId) return;
+
+  chrome.tabs.create({ url: chrome.runtime.getURL('dashboard/dashboard.html') });
+  chrome.notifications.clear(notificationId);
+});
+
 // ===== Message handler for content.js and popup.js =====
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'CREATE_ALARM') {

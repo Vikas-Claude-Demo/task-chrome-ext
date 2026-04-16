@@ -8,7 +8,8 @@
     "storage",
     "alarms",
     "notifications",
-    "activeTab"
+    "activeTab",
+    "identity"
   ],
   "host_permissions": [
     "https://www.linkedin.com/messaging/",
@@ -23,6 +24,14 @@
   ],
   "background": {
     "service_worker": "background.js"
+  },
+  "oauth2": {
+    "client_id": "1059260164595-bm73f0s6o6lj619qa34q1gmt9gb0v32i.apps.googleusercontent.com",
+    "scopes": [
+      "openid",
+      "email",
+      "profile"
+    ]
   },
   "content_scripts": [
     {

@@ -703,6 +703,10 @@ body { display: flex; min-height: 100vh; }
   min-width: 170px;
 }
 
+.creator-filter-select {
+  min-width: 220px;
+}
+
 /* ===== Nav dot (for status items) ===== */
 .nav-btn__dot {
   width: 8px;

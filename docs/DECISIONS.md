@@ -57,3 +57,11 @@ A log of key technical decisions made during this project. Append new entries â€
 **Decision:** Use a dedicated dashboard Contacts tab (`data-tab="contacts"`) backed by Firestore `teams/{teamId}/contacts`, with list + edit flow in-dashboard.
 **Reason:** Contacts should be team-shared records independent from task rows, and users need direct editing of email, phone, company, designation, and LinkedIn URL.
 **Alternatives considered:** Deriving contacts only from tasks (misses team contact records and makes edits non-persistent), separate contacts management page (more navigation friction).
+
+---
+
+## 2026-04-16 â€” Dashboard task tabs support owner + creator filters
+
+**Decision:** In dashboard task-list views (Today, This Week, Pending, Overdue, Completed), keep the existing owner filter (`task.owner`) and add a separate team-member creator filter using `task.createdBy` (Firestore-style `users/{uid}`), with creator options sourced from `teams/{teamId}/members` and shown by member name/email.
+**Reason:** Users need both assignment-based filtering (owner) and attribution-based filtering (who created the task) at the same time.
+**Alternatives considered:** Replacing owner filtering with creator-only filtering was rejected because it removes useful assignment workflows.

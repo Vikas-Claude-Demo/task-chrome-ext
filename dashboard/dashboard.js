@@ -162,8 +162,10 @@ let customerSort = 'lastActivity-desc';
 let customerView = 'cards';          // 'cards' | 'table'
 let cachedAllTasks = [];
 let cachedTeamContacts = [];
+let cachedTeamMembers = [];
 let currentView = 'table'; // 'cards' | 'table'
 let currentOwnerFilter = 'all'; // 'all' | owner id
+let currentCreatorFilter = 'all'; // 'all' | team member uid
 
 // ===== Default settings (fallback when no settings stored yet) =====
 
@@ -459,6 +461,7 @@ async function initApp() {
   setupTimeline();
   setupViewToggle();
   setupOwnerFilter();
+  setupCreatorFilter();
   setupSettings();
 
   // Register one-time listeners only once (initApp can be called multiple times after login)
@@ -479,6 +482,7 @@ async function initApp() {
       if (area === 'local' && changes.settings) {
         loadSettings().then(() => {
           setupOwnerFilter();
+          setupCreatorFilter();
           renderAll();
         });
       }
@@ -738,12 +742,22 @@ async function handleAuthModalLogin(e) {
 // ===== Main render =====
 
 async function renderAll() {
-  const [tasks, contacts] = await Promise.all([
+  const [tasks, contacts, teamData] = await Promise.all([
     cloudStore.getTasks(),
     (cloudStore.listTeamContacts ? cloudStore.listTeamContacts(500) : Promise.resolve([])).catch(() => []),
+    loadTeamData().catch(() => null),
   ]);
   cachedAllTasks = Array.isArray(tasks) ? tasks : [];
   cachedTeamContacts = Array.isArray(contacts) ? contacts : [];
+  cachedTeamMembers = (teamData && Array.isArray(teamData.members)) ? teamData.members : [];
+
+  const creatorOptions = getCreatorFilterMembers();
+  if (currentCreatorFilter !== 'all' && !creatorOptions.find((m) => m.id === currentCreatorFilter)) {
+    currentCreatorFilter = 'all';
+  }
+
+  setupOwnerFilter();
+  setupCreatorFilter();
   showTab(currentTab);
 }
 
@@ -1599,6 +1613,11 @@ function renderTasks(allTasks) {
     tasks = tasks.filter(t => !t.owner || t.owner === currentOwnerFilter);
   }
 
+  // Creator filter (team member who created the task)
+  if (currentCreatorFilter !== 'all') {
+    tasks = tasks.filter((t) => getCreatorUidFromTask(t) === currentCreatorFilter);
+  }
+
   if (searchQuery) {
     const q = searchQuery.toLowerCase();
     tasks = tasks.filter(t =>
@@ -2342,6 +2361,7 @@ function openNewTaskModal() {
     const selectedOwner = String(document.getElementById('nt-owner').value || defaultOwner);
     const selectedStage = String(document.getElementById('nt-stage').value || 'prospect');
     const description = String(document.getElementById('nt-notes').value || '').trim();
+    const auth = await getAuthState();
 
     const now = Date.now();
     const remindAt = new Date(now + (2 * 24 * 60 * 60 * 1000));
@@ -2378,7 +2398,7 @@ function openNewTaskModal() {
       threadUrl: '',
       priority: 'medium',
       tags: [],
-      createdBy: '',
+      createdBy: auth && auth.localId ? `users/${auth.localId}` : '',
       contactName,
       firstName,
       lastName,
@@ -2422,6 +2442,57 @@ function setupSort() {
   });
 }
 
+function getCreatorUidFromTask(task) {
+  const raw = String((task && task.createdBy) || '').trim();
+  if (!raw) return '';
+  return raw.startsWith('users/') ? raw.slice('users/'.length) : raw;
+}
+
+function getCreatorFilterMembers() {
+  const seen = new Set();
+  return (Array.isArray(cachedTeamMembers) ? cachedTeamMembers : [])
+    .map((member) => {
+      const id = String((member && member.userId) || '').trim();
+      if (!id || seen.has(id)) return null;
+      seen.add(id);
+
+      const name = String((member && member.name) || '').trim();
+      const email = String((member && member.email) || '').trim();
+      const label = name || email || id;
+      return { id, label };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function setupCreatorFilter() {
+  const select = document.getElementById('creator-filter-select');
+  if (!select) return;
+
+  const options = getCreatorFilterMembers();
+  select.innerHTML = '';
+
+  const allOpt = document.createElement('option');
+  allOpt.value = 'all';
+  allOpt.textContent = 'Created by: All Members';
+  select.appendChild(allOpt);
+
+  options.forEach((member) => {
+    const opt = document.createElement('option');
+    opt.value = member.id;
+    opt.textContent = `Created by: ${member.label}`;
+    select.appendChild(opt);
+  });
+
+  select.value = options.find((m) => m.id === currentCreatorFilter) ? currentCreatorFilter : 'all';
+  currentCreatorFilter = select.value;
+
+  select.onchange = (e) => {
+    currentCreatorFilter = e.target.value || 'all';
+    renderTasks(cachedAllTasks);
+  };
+}
+
 function setupOwnerFilter() {
   const container = document.getElementById('owner-filter-pills');
   if (!container) return;
@@ -2430,7 +2501,7 @@ function setupOwnerFilter() {
   // "All" pill
   const allPill = document.createElement('button');
   allPill.className = 'owner-filter-pill' + (currentOwnerFilter === 'all' ? ' owner-filter-pill--active' : '');
-  allPill.textContent = 'All';
+  allPill.textContent = 'All Owners';
   allPill.addEventListener('click', () => { currentOwnerFilter = 'all'; setupOwnerFilter(); renderTasks(cachedAllTasks); });
   container.appendChild(allPill);
 

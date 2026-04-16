@@ -600,6 +600,8 @@ body.auth-open {
 }
 .task-btn--complete { background: rgba(46,204,113,0.1); color: #2ecc71; border: 1px solid rgba(46,204,113,0.2); }
 .task-btn--complete:hover { background: rgba(46,204,113,0.2); }
+.task-btn--repeat { background: rgba(255,200,0,0.1); color: #c8ff00; border: 1px solid rgba(200,255,0,0.22); }
+.task-btn--repeat:hover { background: rgba(200,255,0,0.2); }
 .task-btn--delete { background: transparent; color: rgba(255,255,255,0.3); border: 1px solid rgba(255,255,255,0.08); }
 .task-btn--delete:hover { background: rgba(255,76,180,0.1); color: #FF4CB4; border-color: rgba(255,76,180,0.2); }
 

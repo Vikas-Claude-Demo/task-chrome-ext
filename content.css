@@ -409,6 +409,8 @@
 }
 .lts-ptask-btn--done { background: rgba(46,204,113,0.1) !important; color: #2ecc71 !important; border: 1px solid rgba(46,204,113,0.2) !important; }
 .lts-ptask-btn--done:hover { background: rgba(46,204,113,0.2) !important; }
+.lts-ptask-btn--repeat { background: rgba(255,200,0,0.1) !important; color: #c8ff00 !important; border: 1px solid rgba(200,255,0,0.22) !important; }
+.lts-ptask-btn--repeat:hover { background: rgba(200,255,0,0.2) !important; }
 .lts-ptask-btn--del  { background: transparent !important; color: rgba(255,255,255,0.3) !important; border: 1px solid rgba(255,255,255,0.08) !important; }
 .lts-ptask-btn--del:hover { background: rgba(255,76,180,0.1) !important; color: #FF4CB4 !important; border-color: rgba(255,76,180,0.2) !important; }
 
@@ -539,6 +541,34 @@
   letter-spacing: 0.6px !important;
   color: rgba(255,255,255,0.35) !important;
   margin: 0 0 5px 0 !important;
+}
+
+.lts-field-label-row {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 8px !important;
+  margin: 0 0 5px 0 !important;
+}
+
+.lts-field-label-row .lts-field-label {
+  margin: 0 !important;
+}
+
+.lts-linkedin-search-link {
+  color: #c8ff00 !important;
+  text-decoration: none !important;
+  font-size: 14px !important;
+  line-height: 1 !important;
+  font-weight: 600 !important;
+  padding: 1px 4px !important;
+  border-radius: 6px !important;
+  background: rgba(200,255,0,0.08) !important;
+  transition: background 0.12s !important;
+}
+
+.lts-linkedin-search-link:hover {
+  background: rgba(200,255,0,0.16) !important;
 }
 
 /* ===================================================

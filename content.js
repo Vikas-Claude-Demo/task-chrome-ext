@@ -607,6 +607,14 @@ async function renderPanelTasks() {
         renderPanelTasks();
       });
       actions.appendChild(doneBtn);
+
+      const repeatBtn = document.createElement('button');
+      repeatBtn.className = 'lts-ptask-btn lts-ptask-btn--repeat';
+      repeatBtn.textContent = '↻ Repeat';
+      repeatBtn.addEventListener('click', async () => {
+        await repeatTaskFromPanel(task);
+      });
+      actions.appendChild(repeatBtn);
     }
     const delBtn = document.createElement('button');
     delBtn.className = 'lts-ptask-btn lts-ptask-btn--del';
@@ -621,6 +629,50 @@ async function renderPanelTasks() {
 
     container.appendChild(card);
   });
+}
+
+function getPanelRepeatGapMs(task) {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const remindAt = Number(task && task.remindAt) || Date.now();
+  const createdAt = Number(task && task.createdAt) || 0;
+  const explicitDays = Number(task && (task.followUpDays ?? task.followupDays));
+
+  if (Number.isFinite(explicitDays) && explicitDays > 0) {
+    return Math.max(dayMs, Math.round(explicitDays) * dayMs);
+  }
+
+  const inferred = remindAt - createdAt;
+  if (Number.isFinite(inferred) && inferred > 0) return inferred;
+  return 2 * dayMs;
+}
+
+async function repeatTaskFromPanel(task) {
+  if (!task || !task.id) return;
+
+  const previousRemindAt = Number(task.remindAt) || Date.now();
+  const gapMs = getPanelRepeatGapMs(task);
+  const nextCreatedAt = previousRemindAt;
+  const nextRemindAt = previousRemindAt + gapMs;
+  const nextFollowupDays = Math.max(1, Math.round(gapMs / (24 * 60 * 60 * 1000)));
+
+  const repeatedTask = {
+    ...task,
+    id: `task_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    completed: false,
+    status: 'pending',
+    createdAt: nextCreatedAt,
+    remindAt: nextRemindAt,
+    updatedAt: nextCreatedAt,
+    followUpDays: nextFollowupDays,
+    followupDays: nextFollowupDays,
+  };
+
+  await cloudStore.saveTask(repeatedTask);
+  chrome.runtime.sendMessage({
+    action: 'CREATE_ALARM',
+    task: { id: repeatedTask.id, remindAt: repeatedTask.remindAt },
+  });
+  await renderPanelTasks();
 }
 
 function toggleWidgetPopup() {
@@ -1627,6 +1679,34 @@ async function openModal(contactName, threadUrl, platform, prefillDescription) {
   profileLabel.className = 'lts-field-label';
   profileLabel.textContent = 'LinkedIn Profile';
 
+  const profileLabelRow = document.createElement('div');
+  profileLabelRow.className = 'lts-field-label-row';
+  profileLabelRow.appendChild(profileLabel);
+
+  const buildLinkedInSearchUrl = () => {
+    const fullName = [fnInput.value.trim(), lnInput.value.trim()].filter(Boolean).join(' ');
+    return `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(fullName)}`;
+  };
+
+  if (platform === 'gmail' || platform === 'outlook') {
+    const linkedinSearchLink = document.createElement('a');
+    linkedinSearchLink.className = 'lts-linkedin-search-link';
+    linkedinSearchLink.target = '_blank';
+    linkedinSearchLink.rel = 'noopener noreferrer';
+    linkedinSearchLink.title = 'Open LinkedIn search';
+    linkedinSearchLink.setAttribute('aria-label', 'Open LinkedIn search');
+    linkedinSearchLink.textContent = '↗';
+
+    const refreshLinkedInSearchLink = () => {
+      linkedinSearchLink.href = buildLinkedInSearchUrl();
+    };
+
+    refreshLinkedInSearchLink();
+    fnInput.addEventListener('input', refreshLinkedInSearchLink);
+    lnInput.addEventListener('input', refreshLinkedInSearchLink);
+    profileLabelRow.appendChild(linkedinSearchLink);
+  }
+
   const profileInput = document.createElement('input');
   profileInput.type = 'url';
   profileInput.id = 'lts-profile-url';
@@ -1634,7 +1714,7 @@ async function openModal(contactName, threadUrl, platform, prefillDescription) {
   profileInput.value = profileUrl;
   profileInput.placeholder = 'https://linkedin.com/in/...';
 
-  profileRow.append(profileLabel, profileInput);
+  profileRow.append(profileLabelRow, profileInput);
 
   // ---- Email (optional) ----
   const emailRow = document.createElement('div');
@@ -1644,6 +1724,7 @@ async function openModal(contactName, threadUrl, platform, prefillDescription) {
   emailLabel.className = 'lts-field-label';
   emailLabel.textContent = 'Email';
   emailLabel.htmlFor = 'lts-email';
+
 
   const emailInput = document.createElement('input');
   emailInput.type = 'email';

@@ -22,6 +22,8 @@ function parseModeFromQuery() {
 
 function updateAuthModeUI() {
   const isSignUp = authMode === 'signup';
+  const formEl = document.getElementById('auth-form');
+  if (formEl) formEl.dataset.mode = authMode;
   document.getElementById('auth-subtitle').textContent = 'One tap. Back in the conversation';
   document.getElementById('auth-submit').textContent = isSignUp ? 'Sign Up' : 'Sign In';
   document.getElementById('auth-switch-text').textContent = isSignUp ? 'Already have an account?' : "Don't have an account?";
@@ -36,6 +38,9 @@ function updateAuthModeUI() {
   if (nameEl)     { nameEl.hidden     = !isSignUp; nameEl.required     = isSignUp; }
   if (teamcodeEl) { teamcodeEl.hidden = !isSignUp; }
   if (forgotBtn) forgotBtn.hidden = isSignUp;
+
+  // If user switches to Sign In, ensure team-choice modal is not visible.
+  if (!isSignUp) closeGoogleTeamModal();
 }
 
 function toggleAuthMode() {
@@ -68,6 +73,36 @@ async function signUpWithEmailPassword(email, password) {
   );
   const json = await res.json();
   if (!res.ok) throw new Error(json.error?.message || 'SIGNUP_FAILED');
+  return json;
+}
+
+async function signInWithGoogle() {
+  const token = await new Promise((resolve, reject) => {
+    chrome.identity.getAuthToken({ interactive: true }, (accessToken) => {
+      if (chrome.runtime.lastError || !accessToken) {
+        reject(new Error((chrome.runtime.lastError && chrome.runtime.lastError.message) || 'GOOGLE_AUTH_FAILED'));
+        return;
+      }
+      resolve(accessToken);
+    });
+  });
+
+  const requestUri = `https://${chrome.runtime.id}.chromiumapp.org/`;
+  const res = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=${FIREBASE_API_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        postBody: `access_token=${encodeURIComponent(token)}&providerId=google.com`,
+        requestUri,
+        returnSecureToken: true,
+        returnIdpCredential: true,
+      })
+    }
+  );
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error?.message || 'GOOGLE_SIGNIN_FAILED');
   return json;
 }
 
@@ -121,6 +156,9 @@ async function handleForgotPassword() {
 }
 
 function friendlyAuthError(code, mode) {
+  if (code.includes('bad client id')) {
+    return 'Google OAuth is misconfigured. Create a Chrome Extension OAuth client for this extension ID and update manifest oauth2.client_id.';
+  }
   if (code.includes('INVALID_EMAIL')) return 'Please enter a valid email address.';
   if (code.includes('NETWORK_REQUEST_FAILED')) return 'Network error. Check your connection.';
   if (code.includes('TOO_MANY_REQUESTS')) return 'Too many attempts. Please wait and try again.';
@@ -130,7 +168,125 @@ function friendlyAuthError(code, mode) {
     return `Sign up failed: ${code}`;
   }
   if (/INVALID_LOGIN_CREDENTIALS|INVALID_PASSWORD|EMAIL_NOT_FOUND/.test(code)) return 'Invalid email or password.';
+  if (code.includes('The user did not approve access')) return 'Google sign-in was cancelled.';
   return `Sign in failed: ${code}`;
+}
+
+function openGoogleTeamModal() {
+  const modal = document.getElementById('google-team-modal');
+  const errorEl = document.getElementById('google-team-error');
+  if (errorEl) {
+    errorEl.hidden = true;
+    errorEl.textContent = '';
+  }
+  if (modal) modal.hidden = false;
+}
+
+function closeGoogleTeamModal() {
+  const modal = document.getElementById('google-team-modal');
+  if (modal) modal.hidden = true;
+}
+
+async function completeGoogleAuth(options) {
+  const opts = options || {};
+  const teamCode = String(opts.teamCode || '').trim();
+  const isSignUpIntent = !!opts.isSignUpIntent;
+  const authErrorEl = document.getElementById('auth-error');
+  const googleBtn = document.getElementById('google-auth-btn');
+
+  if (authErrorEl) authErrorEl.hidden = true;
+  if (googleBtn) {
+    googleBtn.disabled = true;
+    googleBtn.textContent = 'Continuing with Google...';
+  }
+
+  try {
+    const json = await signInWithGoogle();
+    const email = (json.email || '').trim();
+    let displayName = String(json.displayName || '').trim();
+
+    if (!displayName && json.rawUserInfo) {
+      try {
+        const raw = JSON.parse(json.rawUserInfo);
+        displayName = String(raw.name || '').trim();
+      } catch (_) {}
+    }
+
+    const existingUser = await cloudStore.readDocAtPath(`users/${json.localId}`, json.idToken).catch(() => null);
+    const shouldProvision = isSignUpIntent || !existingUser;
+    if (shouldProvision) {
+      await provisionUserAndTeam(json.localId, json.idToken, displayName, email, teamCode);
+    }
+
+    const ownerId = shouldProvision
+      ? await ensureSingleOwnerSettings(email, `owner_${json.localId}`)
+      : await resolveOwnerId(email);
+
+    await chrome.storage.local.set({
+      auth: {
+        idToken:      json.idToken,
+        refreshToken: json.refreshToken,
+        localId:      json.localId,
+        email,
+        name:         displayName || null,
+        ownerId,
+        expiresAt:    Date.now() + (parseInt(json.expiresIn, 10) * 1000),
+      }
+    });
+    await chrome.storage.sync.set({ currentOwner: ownerId });
+    await completePostSignInMergeFlow();
+    closeGoogleTeamModal();
+    location.href = dashboardUrl();
+  } catch (err) {
+    if (authErrorEl) {
+      authErrorEl.textContent = err.message === 'TEAM_NOT_FOUND'
+        ? 'Team code not found. Check the code or create a new team.'
+        : friendlyAuthError(err.message || 'GOOGLE_LOGIN_FAILED', authMode);
+      authErrorEl.hidden = false;
+    }
+  } finally {
+    if (googleBtn) {
+      googleBtn.disabled = false;
+      googleBtn.textContent = 'Continue with Google';
+    }
+  }
+}
+
+async function handleGoogleAuthClick() {
+  const formMode = document.getElementById('auth-form')?.dataset?.mode;
+  const isSignUp = formMode ? formMode === 'signup' : authMode === 'signup';
+  if (isSignUp) {
+    openGoogleTeamModal();
+    return;
+  }
+  await completeGoogleAuth({ isSignUpIntent: false, teamCode: '' });
+}
+
+async function handleGoogleJoinWithCode() {
+  const input = document.getElementById('google-team-code');
+  const errorEl = document.getElementById('google-team-error');
+  const code = String((input && input.value) || '').trim().toUpperCase();
+  if (!code) {
+    if (errorEl) {
+      errorEl.textContent = 'Please enter a team code.';
+      errorEl.hidden = false;
+    }
+    return;
+  }
+  if (errorEl) {
+    errorEl.hidden = true;
+    errorEl.textContent = '';
+  }
+  await completeGoogleAuth({ isSignUpIntent: true, teamCode: code });
+}
+
+async function handleGoogleCreateTeam() {
+  const errorEl = document.getElementById('google-team-error');
+  if (errorEl) {
+    errorEl.hidden = true;
+    errorEl.textContent = '';
+  }
+  await completeGoogleAuth({ isSignUpIntent: true, teamCode: '' });
 }
 
 async function resolveOwnerId(email) {
@@ -300,6 +456,7 @@ function setupImageRotator() {
 
 document.addEventListener('DOMContentLoaded', async () => {
   parseModeFromQuery();
+  closeGoogleTeamModal();
   updateAuthModeUI();
   setupImageRotator();
   await cloudStore.init();
@@ -307,7 +464,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('auth-form').addEventListener('submit', handleAuthSubmit);
   document.getElementById('auth-switch-btn').addEventListener('click', toggleAuthMode);
   document.getElementById('auth-forgot-btn').addEventListener('click', handleForgotPassword);
-  document.getElementById('guest-btn').addEventListener('click', continueAsGuest);
+  document.getElementById('google-auth-btn').addEventListener('click', handleGoogleAuthClick);
+  document.getElementById('google-team-join').addEventListener('click', handleGoogleJoinWithCode);
+  document.getElementById('google-team-create').addEventListener('click', handleGoogleCreateTeam);
+  document.getElementById('google-team-cancel').addEventListener('click', closeGoogleTeamModal);
+  document.getElementById('google-team-modal').addEventListener('click', (e) => {
+    if (e.target && e.target.id === 'google-team-modal') closeGoogleTeamModal();
+  });
+  const guestBtn = document.getElementById('guest-btn');
+  if (guestBtn) guestBtn.addEventListener('click', continueAsGuest);
 });
 
 window.addEventListener('beforeunload', () => {
